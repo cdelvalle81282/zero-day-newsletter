@@ -461,6 +461,60 @@ def approve(target_date):
     return jsonify({"ok": True, "msg_id": msg_id, "title": title})
 
 
+@app.route("/0dte-daily/send-test/<target_date>", methods=["POST"])
+@require_auth
+def send_test(target_date):
+    """Send a test email of the rendered draft to a specified address."""
+    draft_path = DRAFTS_DIR / f"{target_date}.html"
+    if not draft_path.exists():
+        return jsonify({"ok": False, "error": "No draft found for this date."}), 404
+
+    if not config.OPTIPUB_API_KEY:
+        return jsonify({
+            "ok": False,
+            "error": "OPTIPUB_API_KEY not set. Add it to the server .env file."
+        }), 503
+
+    data = request.get_json(force=True) or {}
+    email = data.get("email", "").strip()
+    if not email:
+        return jsonify({"ok": False, "error": "No email address provided."}), 400
+
+    try:
+        import urllib.request as _urlreq
+        html = draft_path.read_text(encoding="utf-8")
+        brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
+        brief = json.loads(brief_path.read_text()) if brief_path.exists() else {}
+
+        signal_label = {"green": "GREEN LIGHT", "yellow": "YELLOW LIGHT", "red": "RED LIGHT"}.get(
+            brief.get("signal_color", "yellow"), "YELLOW LIGHT"
+        )
+        subject = f"[TEST] 0DTE Daily — {signal_label} — {target_date}"
+
+        payload = json.dumps({
+            "publication_id": config.ZERO_DAY_PUBLICATION_ID,
+            "to": email,
+            "subject": subject,
+            "html": html,
+        }).encode("utf-8")
+
+        req = _urlreq.Request(
+            f"{config.OPTIPUB_API_BASE}/messages/transactional/html",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.OPTIPUB_API_KEY}",
+            },
+            method="POST",
+        )
+        with _urlreq.urlopen(req) as resp:
+            result = json.loads(resp.read())
+
+        return jsonify({"ok": True, "email": email, "result": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/0dte-daily/rerender/<target_date>", methods=["POST"])
 @require_auth
 def rerender(target_date):

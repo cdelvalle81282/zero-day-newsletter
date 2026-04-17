@@ -177,6 +177,10 @@
     {% endif %}
   {% endif %}
 
+  {% if draft_exists %}
+  <button class="btn btn-secondary" id="btnTest" onclick="sendTest()">Send Test Email</button>
+  <span class="spinner" id="spinTest">Sending...</span>
+  {% endif %}
   <a href="/0dte-daily/" class="btn btn-edit">Edit Brief</a>
 </div>
 
@@ -254,6 +258,35 @@
         showToast('Request failed. Check server logs.', 'err');
         document.getElementById('btnApprove').disabled = false;
       });
+  }
+
+  function sendTest() {
+    const email = prompt('Send test to which email address?', 'cdelvalle@optionpit.com');
+    if (!email) return;
+    document.getElementById('btnTest').disabled = true;
+    document.getElementById('spinTest').classList.add('show');
+    showToast('Sending test...', 'info');
+
+    fetch('/0dte-daily/send-test/{{ target_date }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('spinTest').classList.remove('show');
+      document.getElementById('btnTest').disabled = false;
+      if (data.ok) {
+        showToast(`Test sent to ${email}`, 'ok');
+      } else {
+        showToast(`Error: ${data.error}`, 'err');
+      }
+    })
+    .catch(() => {
+      document.getElementById('spinTest').classList.remove('show');
+      document.getElementById('btnTest').disabled = false;
+      showToast('Request failed.', 'err');
+    });
   }
 
   function rerender() {
