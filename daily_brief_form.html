@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>0DTE Daily — Daily Brief</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      background: #0A1628;
+      min-height: 100vh;
+      padding: 32px 16px 64px;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .header h1 {
+      font-size: 28px;
+      color: #FFFFFE;
+      letter-spacing: -0.5px;
+    }
+    .header h1 span { color: #CC3333; }
+    .header .date {
+      font-size: 12px;
+      color: #6B7280;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    /* Cards */
+    .card {
+      background: #FFFFFE;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .card-header {
+      background: #0A1628;
+      border-bottom: 3px solid #CC3333;
+      padding: 12px 20px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #FFFFFE;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .card-body { padding: 20px; }
+
+    /* Form elements */
+    .field { margin-bottom: 18px; }
+    .field:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #374151;
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    label .hint {
+      font-weight: normal;
+      color: #9CA3AF;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #E5E7EB;
+      border-radius: 3px;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 14px;
+      color: #111827;
+      background: #FAFAFA;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: #3B82F6;
+      background: #FFFFFE;
+    }
+    textarea { resize: vertical; line-height: 1.5; }
+
+    /* Signal selector */
+    .signal-group {
+      display: flex;
+      gap: 10px;
+    }
+    .signal-btn {
+      flex: 1;
+      padding: 14px 10px;
+      border: 2px solid #E5E7EB;
+      border-radius: 4px;
+      background: #FAFAFA;
+      cursor: pointer;
+      text-align: center;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 13px;
+      font-weight: bold;
+      color: #6B7280;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .signal-btn:hover { border-color: #9CA3AF; }
+    .signal-btn.active-green  { background: #DCFCE7; border-color: #22C55E; color: #15803D; }
+    .signal-btn.active-yellow { background: #FEF9C3; border-color: #D4A017; color: #92400E; }
+    .signal-btn.active-red    { background: #FEE2E2; border-color: #CC3333; color: #991B1B; }
+    .signal-btn .dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .dot-green  { background: #22C55E; }
+    .dot-yellow { background: #D4A017; }
+    .dot-red    { background: #CC3333; }
+
+    /* Levels grid */
+    .levels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .level-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      align-items: end;
+    }
+    .level-key-row {
+      background: #F8FAFC;
+      border: 1px solid #E5E7EB;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 4px 0;
+    }
+
+    /* Submit */
+    .submit-bar {
+      position: sticky;
+      bottom: 0;
+      background: #0A1628;
+      border-top: 1px solid #1E3A5F;
+      padding: 16px;
+      margin: 0 -16px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .btn {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 3px;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #CC3333; color: #FFFFFE; }
+    .btn-secondary { background: #1E3A5F; color: #FFFFFE; }
+
+    /* Toast */
+    .toast {
+      display: none;
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111827;
+      color: #FFFFFE;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { display: block; }
+    .toast.success { border-left: 4px solid #22C55E; }
+    .toast.error   { border-left: 4px solid #CC3333; }
+
+    /* Status indicator */
+    .save-status {
+      font-size: 12px;
+      color: #6B7280;
+      margin-right: auto;
+    }
+    .save-status.saved { color: #22C55E; }
+
+    @media (max-width: 480px) {
+      .level-row { grid-template-columns: 1fr; }
+      .signal-btn { font-size: 11px; padding: 12px 6px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header">
+    <h1><span>0DTE Daily</span> — Daily Brief</h1>
+    <div class="date" id="todayDate"></div>
+  </div>
+
+  <form id="briefForm">
+
+    <!-- AUTHOR -->
+    <div class="card">
+      <div class="card-header">Today's Author</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Writing today's brief</label>
+          <div class="signal-group" style="gap:10px;">
+            <div class="signal-btn" id="author-licia" onclick="selectAuthor('licia')" style="text-align:left; padding:12px 16px;">
+              <div style="font-weight:bold; margin-bottom:2px;">Licia Leslie</div>
+              <div style="font-size:11px; opacity:0.7; font-weight:normal;">0DTE Analyst</div>
+            </div>
+            <div class="signal-btn" id="author-mark" onclick="selectAuthor('mark')" style="text-align:left; padding:12px 16px;">
+              <div style="font-weight:bold; margin-bottom:2px;">Mark Sebastian</div>
+              <div style="font-size:11px; opacity:0.7; font-weight:normal;">Chief Options Strategist</div>
+            </div>
+            <div class="signal-btn" id="author-olivia" onclick="selectAuthor('olivia')" style="text-align:left; padding:12px 16px;">
+              <div style="font-weight:bold; margin-bottom:2px;">Olivia Voz</div>
+              <div style="font-size:11px; opacity:0.7; font-weight:normal;">Options Analyst</div>
+            </div>
+          </div>
+          <input type="hidden" id="author" name="author" value="licia" />
+        </div>
+      </div>
+    </div>
+
+    <!-- TODAY'S SIGNAL -->
+    <div class="card">
+      <div class="card-header">Today's Signal</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Signal Color</label>
+          <div class="signal-group">
+            <div class="signal-btn" data-color="green" onclick="selectSignal('green')">
+              <span class="dot dot-green"></span>Green Light
+            </div>
+            <div class="signal-btn" data-color="yellow" onclick="selectSignal('yellow')">
+              <span class="dot dot-yellow"></span>Yellow Light
+            </div>
+            <div class="signal-btn" data-color="red" onclick="selectSignal('red')">
+              <span class="dot dot-red"></span>Red Light
+            </div>
+          </div>
+          <input type="hidden" id="signal_color" name="signal_color" required />
+        </div>
+        <div class="field">
+          <label>Signal Rationale <span class="hint">— 2 to 4 sentences</span></label>
+          <textarea id="signal_text" name="signal_text" rows="4" placeholder="Describe today's market conditions and what the signal means for 0DTE traders..." required></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- SPX LEVELS -->
+    <div class="card">
+      <div class="card-header">SPX Key Levels</div>
+      <div class="card-body">
+
+        <div class="field">
+          <div class="level-row">
+            <div>
+              <label>Resistance 2 Label</label>
+              <input type="text" id="level_resistance_2_label" value="Resistance 2 (50-day MA)" required />
+            </div>
+            <div>
+              <label>Value</label>
+              <input type="number" id="level_resistance_2_value" step="0.25" placeholder="e.g. 6850" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="level-row">
+            <div>
+              <label>Resistance 1 Label</label>
+              <input type="text" id="level_resistance_1_label" value="Resistance 1" required />
+            </div>
+            <div>
+              <label>Value</label>
+              <input type="number" id="level_resistance_1_value" step="0.25" placeholder="e.g. 6784" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field level-key-row">
+          <div class="level-row">
+            <div>
+              <label>Key Level Label</label>
+              <input type="text" id="level_key_label" value="Key Level (Pitchfork)" required />
+            </div>
+            <div>
+              <label>Value</label>
+              <input type="number" id="level_key_value" step="0.25" placeholder="e.g. 6767" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="level-row">
+            <div>
+              <label>Support 1 Label</label>
+              <input type="text" id="level_support_1_label" value="Support 1" required />
+            </div>
+            <div>
+              <label>Value</label>
+              <input type="number" id="level_support_1_value" step="0.25" placeholder="e.g. 6753" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="level-row">
+            <div>
+              <label>Support 2 Label</label>
+              <input type="text" id="level_support_2_label" value="Support 2" required />
+            </div>
+            <div>
+              <label>Value</label>
+              <input type="number" id="level_support_2_value" step="0.25" placeholder="e.g. 6741" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Levels Note <span class="hint">— optional 1-2 sentence commentary below the table</span></label>
+          <textarea id="levels_note" name="levels_note" rows="2" placeholder="e.g. Futures topped within 3 bucks of resistance yesterday..."></textarea>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- THE NUMBER — auto-generated from Schwab options chain, no input needed -->
+    <!-- VOLUME ANOMALY — auto-generated from Schwab options chain, no input needed -->
+
+    <!-- EDITOR'S NOTE -->
+    <div class="card">
+      <div class="card-header">Editor's Note — Licia Leslie</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Note <span class="hint">— 3 paragraphs, your voice</span></label>
+          <textarea id="editor_note_text" rows="8" placeholder="Write your editor's note here..." required></textarea>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+  <!-- sticky bottom bar -->
+  <div class="submit-bar">
+    <span class="save-status" id="saveStatus">Not saved</span>
+    <button type="button" class="btn btn-secondary" onclick="saveDraft()">Save Draft</button>
+    <button type="button" class="btn btn-primary" onclick="submitBrief()">Mark as Ready</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Date ──────────────────────────────────────────────────────────────────
+  const today = new Date();
+  const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+  document.getElementById('todayDate').textContent = today.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  }).toUpperCase();
+
+  // ── Author selector ───────────────────────────────────────────────────────
+  function selectAuthor(key) {
+    ['licia','mark','olivia'].forEach(k => {
+      document.getElementById(`author-${k}`).className = 'signal-btn';
+    });
+    document.getElementById(`author-${key}`).classList.add('active-yellow');
+    document.getElementById('author').value = key;
+    autosave();
+  }
+  // Default selection
+  selectAuthor('licia');
+
+  // ── Signal selector ───────────────────────────────────────────────────────
+  function selectSignal(color) {
+    document.querySelectorAll('.signal-btn').forEach(btn => {
+      btn.className = 'signal-btn';
+    });
+    const btn = document.querySelector(`[data-color="${color}"]`);
+    btn.classList.add(`active-${color}`);
+    document.getElementById('signal_color').value = color;
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast show ${type}`;
+    setTimeout(() => { t.className = 'toast'; }, 3500);
+  }
+
+  // ── Collect form data ─────────────────────────────────────────────────────
+  function collectData(status = 'draft') {
+    const g = id => document.getElementById(id).value.trim();
+    const gf = id => parseFloat(g(id)) || null;
+
+    const color = g('signal_color');
+    if (!color) { showToast('Please select a signal color.', 'error'); return null; }
+
+    return {
+      date: dateStr,
+      created_at: new Date().toISOString(),
+      status: status,
+
+      signal_color: color,
+      signal_text: g('signal_text'),
+      signal_attribution: 'Licia Leslie',
+
+      level_resistance_2_label: g('level_resistance_2_label'),
+      level_resistance_2_value: gf('level_resistance_2_value'),
+      level_resistance_1_label: g('level_resistance_1_label'),
+      level_resistance_1_value: gf('level_resistance_1_value'),
+      level_key_label:          g('level_key_label'),
+      level_key_value:          gf('level_key_value'),
+      level_support_1_label:    g('level_support_1_label'),
+      level_support_1_value:    gf('level_support_1_value'),
+      level_support_2_label:    g('level_support_2_label'),
+      level_support_2_value:    gf('level_support_2_value'),
+      levels_note:              g('levels_note'),
+
+      author:           g('author') || 'licia',
+      editor_note_text: g('editor_note_text'),
+    };
+  }
+
+  // ── Detect if running on server or locally ───────────────────────────────
+  const IS_SERVER = window.location.hostname !== '127.0.0.1'
+                 && window.location.hostname !== 'localhost'
+                 && !window.location.protocol.startsWith('file');
+
+  // ── Save Draft ────────────────────────────────────────────────────────────
+  function saveDraft() {
+    const data = collectData('draft');
+    if (!data) return;
+    if (IS_SERVER) {
+      postToServer(data, false);
+    } else {
+      downloadJSON(data);
+      document.getElementById('saveStatus').textContent = 'Draft saved';
+      document.getElementById('saveStatus').className = 'save-status saved';
+      showToast('Draft saved — move the file to daily_briefs/ folder.');
+    }
+  }
+
+  // ── Submit (Mark as Ready) ────────────────────────────────────────────────
+  function submitBrief() {
+    const form = document.getElementById('briefForm');
+    const required = form.querySelectorAll('[required]');
+    for (const el of required) {
+      if (!el.value.trim()) {
+        el.focus();
+        showToast('Please fill in all required fields.', 'error');
+        return;
+      }
+    }
+    const data = collectData('ready');
+    if (!data) return;
+    if (IS_SERVER) {
+      postToServer(data, true);
+    } else {
+      downloadJSON(data);
+      document.getElementById('saveStatus').textContent = 'Marked as ready';
+      document.getElementById('saveStatus').className = 'save-status saved';
+      showToast('Brief ready! Move file to daily_briefs/ then run assemble_newsletter.py');
+    }
+  }
+
+  // ── Post to server ────────────────────────────────────────────────────────
+  function postToServer(data, isReady) {
+    const statusEl = document.getElementById('saveStatus');
+    statusEl.textContent = isReady ? 'Submitting...' : 'Saving...';
+
+    fetch('/0dte-daily/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(resp => {
+      if (resp.ok) {
+        statusEl.textContent = isReady ? 'Submitted' : 'Draft saved';
+        statusEl.className = 'save-status saved';
+        if (isReady && resp.preview_url) {
+          showToast('Brief submitted! Opening dashboard...');
+          setTimeout(() => { window.location.href = '/0dte-daily/'; }, 1200);
+        } else {
+          showToast(resp.warning || 'Saved.');
+        }
+      } else {
+        showToast('Error: ' + (resp.error || 'Unknown error'), 'error');
+        statusEl.textContent = 'Save failed';
+      }
+    })
+    .catch(() => {
+      showToast('Could not reach server.', 'error');
+      statusEl.textContent = 'Save failed';
+    });
+  }
+
+  // ── Download JSON (local fallback) ────────────────────────────────────────
+  function downloadJSON(data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Auto-restore from localStorage ───────────────────────────────────────
+  const STORAGE_KEY = `zerodaybriefform_${dateStr}`;
+
+  function autosave() {
+    const fields = ['signal_text','level_resistance_2_label','level_resistance_2_value',
+      'level_resistance_1_label','level_resistance_1_value','level_key_label','level_key_value',
+      'level_support_1_label','level_support_1_value','level_support_2_label','level_support_2_value',
+      'levels_note','editor_note_text','signal_color','author'];
+    const saved = {};
+    fields.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) saved[id] = el.value;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+
+    document.getElementById('saveStatus').textContent = 'Auto-saved';
+  }
+
+  function restoreFromStorage() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    Object.entries(saved).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    });
+    // Restore signal button state
+    if (saved.signal_color) selectSignal(saved.signal_color);
+    // Restore author
+    if (saved.author) selectAuthor(saved.author);
+    document.getElementById('saveStatus').textContent = 'Restored from earlier session';
+  }
+
+  // Autosave every 30 seconds and on input
+  document.getElementById('briefForm').addEventListener('input', autosave);
+  setInterval(autosave, 30000);
+
+  // Restore on load
+  restoreFromStorage();
+</script>
+
+</body>
+</html>

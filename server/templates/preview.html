@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>0DTE Daily — Preview {{ target_date }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Tahoma, Geneva, Verdana, sans-serif; background: #0A1628; }
+
+    /* Top bar */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: #0A1628;
+      border-bottom: 2px solid #CC3333;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .topbar h1 {
+      font-size: 16px;
+      color: #FFFFFE;
+      margin-right: auto;
+    }
+    .topbar h1 span { color: #CC3333; }
+    .topbar .date-tag {
+      font-size: 11px;
+      color: #6B7280;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Status badges */
+    .badge {
+      font-size: 11px;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-ok     { background: #14532D; color: #4ADE80; }
+    .badge-warn   { background: #451A03; color: #FB923C; }
+    .badge-info   { background: #1E3A5F; color: #60A5FA; }
+
+    /* Signal pill */
+    .signal-pill {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 4px 12px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .signal-green  { background: #14532D; color: #4ADE80; }
+    .signal-yellow { background: #451A03; color: #FCD34D; }
+    .signal-red    { background: #4C0519; color: #FCA5A5; }
+
+    /* Buttons */
+    .btn {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 3px;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover { opacity: 0.8; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-approve  { background: #22C55E; color: #FFFFFE; }
+    .btn-rerender { background: #3B82F6; color: #FFFFFE; }
+    .btn-edit     { background: #4B5563; color: #FFFFFE; }
+    .btn-approved { background: #14532D; color: #4ADE80; cursor: default; }
+
+    /* Main content */
+    .content {
+      margin-top: 60px;
+      padding: 24px;
+    }
+
+    /* No draft state */
+    .no-draft {
+      max-width: 500px;
+      margin: 80px auto;
+      text-align: center;
+      color: #9CA3AF;
+    }
+    .no-draft h2 { color: #FFFFFE; margin-bottom: 12px; }
+    .no-draft p  { margin-bottom: 20px; line-height: 1.6; }
+
+    /* Newsletter iframe */
+    .preview-frame {
+      width: 100%;
+      border: none;
+      background: #F3F4F6;
+      border-radius: 4px;
+      display: block;
+    }
+
+    /* Toast */
+    .toast {
+      display: none;
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111827;
+      color: #FFFFFE;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show   { display: block; }
+    .toast.ok     { border-left: 4px solid #22C55E; }
+    .toast.err    { border-left: 4px solid #CC3333; }
+    .toast.info   { border-left: 4px solid #3B82F6; }
+
+    .spinner { display: none; font-size: 12px; color: #9CA3AF; margin-left: 8px; }
+    .spinner.show { display: inline; }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <h1><span>0DTE Daily</span> Preview</h1>
+  <span class="date-tag">{{ target_date }}</span>
+
+  <!-- Status badges -->
+  {% if brief_exists %}
+    <span class="badge badge-ok">Brief ready</span>
+  {% else %}
+    <span class="badge badge-warn">No brief</span>
+  {% endif %}
+
+  {% if market_exists %}
+    <span class="badge badge-ok">Market data</span>
+  {% else %}
+    <span class="badge badge-warn">No market data</span>
+  {% endif %}
+
+  <!-- Signal -->
+  {% if brief_exists %}
+    <span class="signal-pill signal-{{ signal_color }}">{{ signal_color }} light</span>
+  {% endif %}
+
+  <!-- Actions -->
+  {% if draft_exists %}
+    <button class="btn btn-rerender" id="btnRerender" onclick="rerender()">
+      Re-render
+    </button>
+    <span class="spinner" id="spinRerender">Working...</span>
+  {% endif %}
+
+  {% if is_approved %}
+    <button class="btn btn-approved" disabled>
+      Approved ✓{% if optipub_msg_id %} (#{{ optipub_msg_id }}){% endif %}
+    </button>
+  {% elif draft_exists %}
+    {% if optipub_connected %}
+      <button class="btn btn-approve" id="btnApprove" onclick="approve()">
+        Approve → OptiPub
+      </button>
+      <span class="spinner" id="spinApprove">Posting...</span>
+    {% else %}
+      <button class="btn btn-approve" disabled title="Add OPTIPUB_API_KEY to server .env to enable">
+        Approve (OptiPub not connected)
+      </button>
+    {% endif %}
+  {% endif %}
+
+  <a href="/0dte-daily/" class="btn btn-edit">Edit Brief</a>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="content">
+
+  {% if not brief_exists %}
+  <div class="no-draft">
+    <h2>No brief for {{ target_date }}</h2>
+    <p>Licia hasn't submitted a Daily Brief for this date yet.<br>
+       Fill out the form to generate the newsletter draft.</p>
+    <a href="/0dte-daily/" class="btn btn-edit">Open Daily Brief Form</a>
+  </div>
+
+  {% elif not draft_exists %}
+  <div class="no-draft">
+    <h2>Brief submitted — draft not yet generated</h2>
+    <p>The brief exists but the newsletter hasn't been assembled yet.<br>
+       This usually means market data is still pending (runs at 4:30 PM ET).</p>
+    <button class="btn btn-rerender" onclick="rerender()">Try assembling now</button>
+    <span class="spinner" id="spinRerender" style="color:#9CA3AF; margin-left:8px;">Working...</span>
+  </div>
+
+  {% else %}
+  <!-- Newsletter preview in iframe -->
+  <iframe
+    src="/0dte-daily/draft/{{ target_date }}"
+    class="preview-frame"
+    id="previewFrame"
+    onload="resizeFrame(this)"
+    scrolling="no">
+  </iframe>
+  {% endif %}
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Auto-resize iframe to newsletter height
+  function resizeFrame(iframe) {
+    try {
+      iframe.style.height = iframe.contentDocument.body.scrollHeight + 40 + 'px';
+    } catch(e) {
+      iframe.style.height = '1200px';
+    }
+  }
+
+  function showToast(msg, type = 'ok') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast show ${type}`;
+    setTimeout(() => { t.className = 'toast'; }, 4000);
+  }
+
+  function approve() {
+    if (!confirm('Post this draft to OptiPub? You can still review and edit it there before sending to subscribers.')) return;
+    document.getElementById('btnApprove').disabled = true;
+    document.getElementById('spinApprove').classList.add('show');
+
+    fetch('/0dte-daily/approve/{{ target_date }}', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('spinApprove').classList.remove('show');
+        if (data.ok) {
+          showToast(`Draft posted to OptiPub (ID: ${data.msg_id})`, 'ok');
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          showToast(`Error: ${data.error}`, 'err');
+          document.getElementById('btnApprove').disabled = false;
+        }
+      })
+      .catch(e => {
+        document.getElementById('spinApprove').classList.remove('show');
+        showToast('Request failed. Check server logs.', 'err');
+        document.getElementById('btnApprove').disabled = false;
+      });
+  }
+
+  function rerender() {
+    const btn = document.getElementById('btnRerender');
+    const spin = document.getElementById('spinRerender');
+    if (btn) btn.disabled = true;
+    if (spin) spin.classList.add('show');
+    showToast('Re-rendering...', 'info');
+
+    fetch('/0dte-daily/rerender/{{ target_date }}', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (spin) spin.classList.remove('show');
+        if (data.ok) {
+          showToast('Re-rendered. Reloading preview...', 'ok');
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          showToast(`Error: ${data.error}`, 'err');
+          if (btn) btn.disabled = false;
+        }
+      })
+      .catch(() => {
+        if (spin) spin.classList.remove('show');
+        showToast('Request failed.', 'err');
+        if (btn) btn.disabled = false;
+      });
+  }
+</script>
+</body>
+</html>

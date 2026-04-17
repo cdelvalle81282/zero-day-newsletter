@@ -1,0 +1,24 @@
+# Secrets & credentials
+schwab_token.json
+.env
+*.key
+
+# Generated outputs
+daily_briefs/
+market_data/
+drafts/
+zero_day_draft_*.html
+licia_0dte_message_content.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

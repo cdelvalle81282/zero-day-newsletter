@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>0DTE Daily — Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      background: #0A1628;
+      color: #FFFFFE;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #071020;
+      border-bottom: 1px solid #1E3A5F;
+      padding: 0 28px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .topbar h1 { font-size: 18px; color: #FFFFFE; }
+    .topbar h1 span { color: #CC3333; }
+    .topbar .spacer { flex: 1; }
+    .topbar .now {
+      font-size: 11px;
+      color: #4B6A8A;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .btn-sm {
+      padding: 7px 16px;
+      border: none;
+      border-radius: 3px;
+      font-family: Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: opacity 0.15s;
+    }
+    .btn-sm:hover { opacity: 0.8; }
+    .btn-primary   { background: #CC3333; color: #FFFFFE; }
+    .btn-secondary { background: #1E3A5F; color: #FFFFFE; }
+    .btn-green     { background: #15803D; color: #FFFFFE; }
+
+    /* ── Layout ── */
+    .page { padding: 24px 28px; max-width: 1100px; margin: 0 auto; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 860px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: #0F1F35;
+      border: 1px solid #1E3A5F;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 10px 16px;
+      background: #071020;
+      border-bottom: 1px solid #1E3A5F;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #4B6A8A;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-header .card-action {
+      font-size: 11px;
+      color: #3B82F6;
+      text-decoration: none;
+      letter-spacing: 0;
+      text-transform: none;
+      font-weight: normal;
+    }
+    .card-body { padding: 16px; }
+
+    /* ── Pipeline steps ── */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 3px;
+      background: #0A1628;
+    }
+    .step-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .step-icon.done    { background: #14532D; color: #4ADE80; }
+    .step-icon.pending { background: #1E3A5F; color: #60A5FA; }
+    .step-icon.waiting { background: #1C1C1C; color: #4B5563; }
+    .step-icon.warn    { background: #451A03; color: #FB923C; }
+    .step-body { flex: 1; }
+    .step-label {
+      font-size: 13px;
+      font-weight: bold;
+      color: #FFFFFE;
+    }
+    .step-label.muted  { color: #4B5563; }
+    .step-sub  {
+      font-size: 11px;
+      color: #4B6A8A;
+      margin-top: 2px;
+    }
+    .step-time {
+      font-size: 11px;
+      color: #4B6A8A;
+      flex-shrink: 0;
+    }
+
+    /* ── Market snapshot ── */
+    .snap-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .snap-tile {
+      background: #0A1628;
+      border-radius: 3px;
+      padding: 12px 14px;
+    }
+    .snap-ticker {
+      font-size: 10px;
+      color: #4B6A8A;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .snap-value {
+      font-size: 20px;
+      font-weight: bold;
+      line-height: 1;
+    }
+    .snap-pct {
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .up   { color: #22C55E; }
+    .down { color: #CC3333; }
+    .neutral { color: #9CA3AF; }
+
+    /* ── Signal badge ── */
+    .signal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .signal-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .sig-green  { background: #14532D; color: #4ADE80; }
+    .sig-green .signal-dot  { background: #4ADE80; }
+    .sig-yellow { background: #451A03; color: #FCD34D; }
+    .sig-yellow .signal-dot { background: #FCD34D; }
+    .sig-red    { background: #4C0519; color: #FCA5A5; }
+    .sig-red .signal-dot    { background: #FCA5A5; }
+
+    /* ── Levels mini-table ── */
+    .levels-mini { width: 100%; border-collapse: collapse; }
+    .levels-mini td {
+      padding: 5px 8px;
+      font-size: 12px;
+      border-bottom: 1px solid #1E3A5F;
+    }
+    .levels-mini tr:last-child td { border-bottom: none; }
+    .levels-mini .lname { color: #9CA3AF; }
+    .levels-mini .lval  { text-align: right; font-weight: bold; }
+    .levels-mini .lval.res { color: #CC3333; }
+    .levels-mini .lval.sup { color: #22C55E; }
+    .levels-mini .lval.key { color: #FFFFFE; }
+    .levels-mini .key-row td { background: #071020; }
+
+    /* ── Token health ── */
+    .token-bar-bg {
+      background: #0A1628;
+      border-radius: 20px;
+      height: 8px;
+      margin: 8px 0 4px;
+      overflow: hidden;
+    }
+    .token-bar-fill {
+      height: 100%;
+      border-radius: 20px;
+      transition: width 0.3s;
+    }
+
+    /* ── History table ── */
+    .hist-table { width: 100%; border-collapse: collapse; }
+    .hist-table th {
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #4B6A8A;
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid #1E3A5F;
+    }
+    .hist-table td {
+      padding: 8px 10px;
+      font-size: 12px;
+      border-bottom: 1px solid #0A1628;
+      color: #D1D5DB;
+    }
+    .hist-table tr:last-child td { border-bottom: none; }
+    .hist-table tr:hover td { background: #071020; }
+    .dot-done    { color: #4ADE80; }
+    .dot-missing { color: #374151; }
+    .dot-warn    { color: #FB923C; }
+
+    /* ── Refresh indicator ── */
+    .refresh-note {
+      font-size: 11px;
+      color: #374151;
+      text-align: right;
+      margin-top: 16px;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      padding: 24px 0;
+      color: #374151;
+      font-size: 13px;
+    }
+
+    /* ── Section spacers ── */
+    .section-gap { margin-top: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1><span>0DTE Daily</span> — Dashboard</h1>
+  <div class="spacer"></div>
+  <span class="now" id="clockNow"></span>
+  <a href="/0dte-daily/brief/" class="btn-sm btn-primary">+ Daily Brief</a>
+  {% if today.draft %}
+  <a href="/0dte-daily/preview/{{ today.date }}" class="btn-sm btn-secondary">Preview Draft</a>
+  {% endif %}
+</div>
+
+<div class="page">
+
+  <!-- ── Row 1: Pipeline + Market Snapshot ── -->
+  <div class="grid-2">
+
+    <!-- Pipeline -->
+    <div class="card">
+      <div class="card-header">
+        Today's Pipeline
+        <span>{{ today.date }}</span>
+      </div>
+      <div class="card-body">
+        <div class="pipeline">
+
+          <!-- Brief -->
+          <div class="step">
+            <div class="step-icon {{ 'done' if today.brief else 'waiting' }}">
+              {{ '✓' if today.brief else '1' }}
+            </div>
+            <div class="step-body">
+              <div class="step-label {{ '' if today.brief else 'muted' }}">Daily Brief</div>
+              <div class="step-sub">
+                {% if today.brief %}
+                  Submitted by {{ today.author_name }}
+                  {% if today.signal_color %}
+                    &nbsp;·&nbsp;
+                    <span class="signal-badge sig-{{ today.signal_color }}" style="padding:2px 8px; font-size:10px;">
+                      <span class="signal-dot"></span>{{ today.signal_color }} light
+                    </span>
+                  {% endif %}
+                {% else %}
+                  Waiting for Licia's input
+                {% endif %}
+              </div>
+            </div>
+            {% if today.brief_time %}
+            <div class="step-time">{{ today.brief_time }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Market Data -->
+          <div class="step">
+            <div class="step-icon {{ 'done' if today.market_data else ('pending' if today.market_data_pending else 'waiting') }}">
+              {{ '✓' if today.market_data else '2' }}
+            </div>
+            <div class="step-body">
+              <div class="step-label {{ '' if today.market_data else 'muted' }}">Market Data</div>
+              <div class="step-sub">
+                {% if today.market_data %}
+                  SPX, VIX, SPY, QQQ + 0DTE volume fetched
+                {% else %}
+                  Auto-fetch at 4:30 PM ET
+                {% endif %}
+              </div>
+            </div>
+            {% if today.market_fetch_time %}
+            <div class="step-time">{{ today.market_fetch_time }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Draft -->
+          <div class="step">
+            <div class="step-icon {{ 'done' if today.draft else 'waiting' }}">
+              {{ '✓' if today.draft else '3' }}
+            </div>
+            <div class="step-body">
+              <div class="step-label {{ '' if today.draft else 'muted' }}">Newsletter Draft</div>
+              <div class="step-sub">
+                {% if today.draft %}
+                  <a href="/0dte-daily/preview/{{ today.date }}" style="color:#3B82F6;">Open preview →</a>
+                {% else %}
+                  Assembled automatically after brief is submitted
+                {% endif %}
+              </div>
+            </div>
+            {% if today.draft_time %}
+            <div class="step-time">{{ today.draft_time }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Approved -->
+          <div class="step">
+            <div class="step-icon {{ 'done' if today.approved else ('warn' if today.draft and not today.approved else 'waiting') }}">
+              {{ '✓' if today.approved else ('!' if today.draft and not today.approved else '4') }}
+            </div>
+            <div class="step-body">
+              <div class="step-label {{ '' if today.approved else ('muted' if not today.draft else '') }}">
+                {% if today.approved %}Approved & Posted to OptiPub
+                {% elif today.draft %}Awaiting Your Approval
+                {% else %}Approval
+                {% endif %}
+              </div>
+              <div class="step-sub">
+                {% if today.approved %}
+                  OptiPub draft ID: {{ today.optipub_id }}
+                {% elif today.draft %}
+                  <a href="/0dte-daily/preview/{{ today.date }}" style="color:#FB923C;">Review and approve →</a>
+                {% else %}
+                  Approve on the preview page
+                {% endif %}
+              </div>
+            </div>
+            {% if today.approved_time %}
+            <div class="step-time">{{ today.approved_time }}</div>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Market Snapshot -->
+    <div class="card">
+      <div class="card-header">
+        Market Snapshot
+        {% if today.market_date %}
+          {% if today.market_date == today.date %}
+            <span style="color:#4ADE80;">{{ today.market_date }} close</span>
+          {% else %}
+            <span style="color:#FB923C;">Last close: {{ today.market_date }} &nbsp;·&nbsp; Today's pending 4:30 PM ET</span>
+          {% endif %}
+        {% else %}
+          <span style="color:#4B6A8A;">No data yet</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if today.market_date %}
+        <div class="snap-grid">
+          {% for ticker in today.tickers %}
+          <div class="snap-tile">
+            <div class="snap-ticker">{{ ticker.name }}</div>
+            <div class="snap-value {{ ticker.color_class }}">{{ ticker.close }}</div>
+            <div class="snap-pct {{ ticker.color_class }}">{{ ticker.pct }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% if today.spx_ma %}
+        <div style="margin-top:12px; padding:8px 12px; background:#0A1628; border-radius:3px; font-size:12px; color:#4B6A8A;">
+          SPX 50-day MA: <strong style="color:#FFFFFE;">{{ today.spx_ma }}</strong>
+        </div>
+        {% endif %}
+        {% if today.options_volume %}
+        <div style="margin-top:8px; padding:8px 12px; background:#0A1628; border-radius:3px; font-size:12px; color:#4B6A8A;">
+          0DTE Volume: <strong style="color:#FFFFFE;">{{ today.options_volume }}</strong>
+          {% if today.options_vs_avg %}
+          &nbsp;·&nbsp; <span class="{{ 'up' if today.options_vs_avg_pos else 'down' }}">{{ today.options_vs_avg }} vs 20d avg</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty">
+          No market data available yet.<br>Auto-fetches at 4:30 PM ET on trading days.
+          <br><br>
+          <span style="color:#1E3A5F;">SPX &nbsp; VIX &nbsp; SPY &nbsp; QQQ</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /grid-2 -->
+
+  <!-- ── Row 2: Brief Summary + Token Health ── -->
+  <div class="grid-2 section-gap">
+
+    <!-- Today's Brief Summary -->
+    <div class="card">
+      <div class="card-header">
+        Today's Brief
+        {% if today.brief %}
+        <a href="/0dte-daily/brief/" class="card-action">Edit</a>
+        {% else %}
+        <a href="/0dte-daily/brief/" class="card-action">Fill out →</a>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if today.brief %}
+
+        <!-- Signal -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:10px; color:#4B6A8A; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px;">Signal</div>
+          <span class="signal-badge sig-{{ today.signal_color }}">
+            <span class="signal-dot"></span>{{ today.signal_label }}
+          </span>
+          {% if today.signal_text %}
+          <p style="margin-top:8px; font-size:12px; color:#9CA3AF; line-height:1.5;">{{ today.signal_text[:180] }}{% if today.signal_text|length > 180 %}…{% endif %}</p>
+          {% endif %}
+        </div>
+
+        <!-- Levels -->
+        <div>
+          <div style="font-size:10px; color:#4B6A8A; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px;">SPX Key Levels</div>
+          <table class="levels-mini">
+            <tr>
+              <td class="lname">{{ today.levels.r2_label }}</td>
+              <td class="lval res">{{ today.levels.r2_value }}</td>
+            </tr>
+            <tr>
+              <td class="lname">{{ today.levels.r1_label }}</td>
+              <td class="lval res">{{ today.levels.r1_value }}</td>
+            </tr>
+            <tr class="key-row">
+              <td class="lname"><strong>{{ today.levels.key_label }}</strong></td>
+              <td class="lval key"><strong>{{ today.levels.key_value }}</strong></td>
+            </tr>
+            <tr>
+              <td class="lname">{{ today.levels.s1_label }}</td>
+              <td class="lval sup">{{ today.levels.s1_value }}</td>
+            </tr>
+            <tr>
+              <td class="lname">{{ today.levels.s2_label }}</td>
+              <td class="lval sup">{{ today.levels.s2_value }}</td>
+            </tr>
+          </table>
+        </div>
+
+        {% else %}
+        <div class="empty">
+          No brief submitted yet today.<br><br>
+          <a href="/0dte-daily/brief/" class="btn-sm btn-primary">Open Daily Brief Form</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Right column: Token health + auto-generated sections -->
+    <div style="display:flex; flex-direction:column; gap:20px;">
+
+      <!-- Token Health -->
+      <div class="card">
+        <div class="card-header">Schwab Token Health</div>
+        <div class="card-body">
+          {% if token.exists %}
+            {% set bar_color = '#22C55E' if token.days_left > 3 else ('#FB923C' if token.days_left > 1 else '#CC3333') %}
+            {% set bar_pct = (token.days_left / 7 * 100)|int %}
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:13px; color:{{ bar_color }}; font-weight:bold;">
+                {{ token.days_left }} day{{ 's' if token.days_left != 1 }} remaining
+              </span>
+              <span style="font-size:11px; color:#4B6A8A;">Expires {{ token.expires }}</span>
+            </div>
+            <div class="token-bar-bg">
+              <div class="token-bar-fill" style="width:{{ bar_pct }}%; background:{{ bar_color }};"></div>
+            </div>
+            {% if token.days_left <= 3 %}
+            <div style="font-size:11px; color:#FB923C; margin-top:6px;">
+              ⚠ Run <code style="background:#0A1628; padding:1px 5px; border-radius:2px;">python3 scripts/reauth.py</code> locally then <code style="background:#0A1628; padding:1px 5px; border-radius:2px;">bash push_token.sh</code>
+            </div>
+            {% endif %}
+          {% else %}
+            <div style="color:#CC3333; font-size:13px;">Token file not found. Run reauth.py locally then push_token.sh.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Auto-generated preview (if market data available) -->
+      {% if today.the_number %}
+      <div class="card">
+        <div class="card-header">The Number <span style="color:#22C55E; font-size:10px;">auto</span></div>
+        <div class="card-body">
+          <div style="font-size:32px; font-weight:bold; color:#22C55E; letter-spacing:-1px; margin-bottom:6px;">{{ today.the_number }}</div>
+          <div style="font-size:12px; color:#9CA3AF; line-height:1.5;">{{ today.the_number_text[:160] }}{% if today.the_number_text|length > 160 %}…{% endif %}</div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div><!-- /grid-2 -->
+
+  <!-- ── Row 3: History ── -->
+  <div class="section-gap">
+    <div class="card">
+      <div class="card-header">Recent History <span>Last 10 issues</span></div>
+      <div class="card-body" style="padding:0;">
+        {% if history %}
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Brief</th>
+              <th>Market Data</th>
+              <th>Draft</th>
+              <th>Approved</th>
+              <th>Signal</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in history %}
+            <tr>
+              <td><strong>{{ row.date }}</strong></td>
+              <td><span class="{{ 'dot-done' if row.brief else 'dot-missing' }}">{{ '●' if row.brief else '○' }}</span></td>
+              <td><span class="{{ 'dot-done' if row.market_data else 'dot-missing' }}">{{ '●' if row.market_data else '○' }}</span></td>
+              <td><span class="{{ 'dot-done' if row.draft else 'dot-missing' }}">{{ '●' if row.draft else '○' }}</span></td>
+              <td><span class="{{ 'dot-done' if row.approved else ('dot-warn' if row.draft and not row.approved else 'dot-missing') }}">{{ '●' if row.approved else '○' }}</span></td>
+              <td>
+                {% if row.signal_color %}
+                <span class="signal-badge sig-{{ row.signal_color }}" style="padding:2px 8px; font-size:10px;">
+                  <span class="signal-dot"></span>{{ row.signal_color }}
+                </span>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% if row.draft %}
+                <a href="/0dte-daily/preview/{{ row.date }}" style="color:#3B82F6; font-size:11px;">Preview</a>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty">No history yet. Issue history will appear here as drafts are assembled.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="refresh-note">Auto-refreshes every 60 seconds &nbsp;·&nbsp; <span id="lastRefresh"></span></div>
+
+</div><!-- /page -->
+
+<script>
+  // Clock
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clockNow').textContent = now.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'long', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+    });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // Auto-refresh page every 60s
+  let refreshTimer = 60;
+  function countdown() {
+    document.getElementById('lastRefresh').textContent = `Next refresh in ${refreshTimer}s`;
+    refreshTimer--;
+    if (refreshTimer < 0) { location.reload(); }
+  }
+  countdown();
+  setInterval(countdown, 1000);
+</script>
+</body>
+</html>

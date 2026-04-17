@@ -1,0 +1,20 @@
+# Add this block to your Caddyfile on the server.
+# Your Caddyfile is likely at /etc/caddy/Caddyfile or similar.
+#
+# This routes /0dte-daily/* to the zeroday Flask container on port 8001.
+# Add it inside your existing optionpit-api.duckdns.org block.
+
+# ── Existing block (example) ──────────────────────────────────────────────────
+# optionpit-api.duckdns.org {
+#     reverse_proxy /some-other-path/* localhost:8000
+#     ... (existing routes)
+#
+#     # ADD THIS:
+#     reverse_proxy /0dte-daily/* localhost:8001
+# }
+# ─────────────────────────────────────────────────────────────────────────────
+
+# To apply after editing:
+#   caddy reload --config /etc/caddy/Caddyfile
+# or:
+#   systemctl reload caddy

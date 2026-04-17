@@ -1,0 +1,21 @@
+services:
+  zeroday:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: zeroday
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./schwab_token.json:/opt/zeroday/schwab_token.json
+      - ./daily_briefs:/opt/zeroday/daily_briefs
+      - ./market_data:/opt/zeroday/market_data
+      - ./drafts:/opt/zeroday/drafts
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
