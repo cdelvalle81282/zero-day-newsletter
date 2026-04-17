@@ -331,7 +331,8 @@ def render_template(tokens):
 
 # ── OptiPub draft creation ────────────────────────────────────────────────────
 
-def create_optipub_draft(html, brief, target_date):
+def create_optipub_draft(html, brief, target_date,
+                         included_segments=None, excluded_segments=None):
     """POST the rendered HTML as a draft message to OptiPub."""
     import urllib.request
 
@@ -340,12 +341,20 @@ def create_optipub_draft(html, brief, target_date):
     date_str = dt.strftime("%B %-d") if os.name != "nt" else dt.strftime("%B {d}").replace("{d}", str(dt.day))
     title = f"0DTE Daily — {signal_label} — {date_str}"
 
-    payload = json.dumps({
-        "publication_id": config.ZERO_DAY_PUBLICATION_ID,
-        "message_type_id": 3,   # email-free-style
-        "title": title,
-        "content": html,
-    }).encode("utf-8")
+    body = {
+        "publication_id":   config.ZERO_DAY_PUBLICATION_ID,
+        "message_type_id":  3,   # email-free-style
+        "sender_id":        config.OPTIPUB_SENDER_ID,
+        "title":            title,
+        "content":          html,
+    }
+
+    if included_segments:
+        body["included_segments"] = [{"id": s} for s in included_segments]
+    if excluded_segments:
+        body["excluded_segments"] = [{"id": s} for s in excluded_segments]
+
+    payload = json.dumps(body).encode("utf-8")
 
     req = urllib.request.Request(
         f"{config.OPTIPUB_API_BASE}/messages",

@@ -393,6 +393,24 @@ def preview(target_date):
     is_approved = approved_path.exists()
     approved_data = json.loads(approved_path.read_text()) if is_approved else {}
 
+    # Build segment list for the picker
+    default_seg_ids = [
+        int(s.strip())
+        for s in config.OPTIPUB_DEFAULT_SEGMENTS.split(",")
+        if s.strip()
+    ]
+    # Segment names lookup from the IDs we know
+    known_segments = {
+        11:  "Staff List",
+        338: "PDTE - 0DTE - Paid",
+        339: "PDTE Paid List (static)",
+        743: "VDTE - 0DTE - VIP",
+    }
+    segments = [
+        {"id": sid, "name": known_segments.get(sid, f"Segment {sid}"), "count": None}
+        for sid in default_seg_ids
+    ]
+
     return render_template(
         "preview.html",
         target_date=target_date,
@@ -404,6 +422,7 @@ def preview(target_date):
         optipub_msg_id=approved_data.get("msg_id"),
         optipub_title=approved_data.get("title"),
         optipub_connected=bool(config.OPTIPUB_API_KEY),
+        segments=segments,
     )
 
 
@@ -434,7 +453,17 @@ def approve(target_date):
         from assemble_newsletter import create_optipub_draft
         brief  = json.loads(brief_path.read_text()) if brief_path.exists() else {}
         html   = draft_path.read_text(encoding="utf-8")
-        msg_id, title = create_optipub_draft(html, brief, target_date)
+
+        # Optional segment selections from the approve request body
+        body = request.get_json(silent=True) or {}
+        included = [int(i) for i in body.get("included_segments", [])]
+        excluded = [int(i) for i in body.get("excluded_segments", [])]
+
+        msg_id, title = create_optipub_draft(
+            html, brief, target_date,
+            included_segments=included or None,
+            excluded_segments=excluded or None,
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -482,20 +511,22 @@ def send_test(target_date):
 
     try:
         import urllib.request as _urlreq
-        html = draft_path.read_text(encoding="utf-8")
+        html      = draft_path.read_text(encoding="utf-8")
         brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
-        brief = json.loads(brief_path.read_text()) if brief_path.exists() else {}
+        brief     = json.loads(brief_path.read_text()) if brief_path.exists() else {}
 
-        signal_label = {"green": "GREEN LIGHT", "yellow": "YELLOW LIGHT", "red": "RED LIGHT"}.get(
-            brief.get("signal_color", "yellow"), "YELLOW LIGHT"
-        )
+        signal_label = {
+            "green": "GREEN LIGHT", "yellow": "YELLOW LIGHT", "red": "RED LIGHT"
+        }.get(brief.get("signal_color", "yellow"), "YELLOW LIGHT")
         subject = f"[TEST] 0DTE Daily — {signal_label} — {target_date}"
 
         payload = json.dumps({
+            "email":          email,
+            "subject":        subject,
+            "content":        html,
+            "sender_id":      config.OPTIPUB_SENDER_ID,
             "publication_id": config.ZERO_DAY_PUBLICATION_ID,
-            "to": email,
-            "subject": subject,
-            "html": html,
+            "preview_line":   f"Test send — {signal_label} — {target_date}",
         }).encode("utf-8")
 
         req = _urlreq.Request(
@@ -510,7 +541,7 @@ def send_test(target_date):
         with _urlreq.urlopen(req) as resp:
             result = json.loads(resp.read())
 
-        return jsonify({"ok": True, "email": email, "result": result})
+        return jsonify({"ok": True, "email": email})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
