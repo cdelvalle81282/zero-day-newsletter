@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from schwab import auth
 
 import config
+from trading_calendar import is_trading_day
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -282,8 +283,16 @@ def main():
         default="full",
         help="options=3:50PM fetch, quotes=4:35PM fetch, full=both"
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Run even on non-trading days (for testing)"
+    )
     args = parser.parse_args()
     today = str(date.today())
+
+    if not args.force and not is_trading_day():
+        print(f"Today ({today}) is not a trading day. Skipping. Use --force to override.")
+        sys.exit(0)
 
     print(f"Fetching market data [{args.mode}] for {today}...")
     c = get_client()

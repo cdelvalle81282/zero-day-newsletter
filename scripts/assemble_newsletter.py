@@ -17,6 +17,7 @@ import sys
 from datetime import date, datetime, timedelta
 
 import config
+from trading_calendar import market_data_date_for_newsletter, is_trading_day
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,9 +26,25 @@ def load_json(path):
         return json.load(f)
 
 
-def find_market_data(target_date):
-    """Load market data for target_date or the most recent available file."""
-    exact = os.path.join(config.MARKET_DATA_DIR, f"{target_date}.json")
+def find_market_data(newsletter_date):
+    """
+    Load market data for the correct trading day for a given newsletter date.
+
+    The newsletter describes the PREVIOUS trading day's market action:
+      Monday newsletter  → Friday's data
+      Post-holiday newsletter → last trading day before the holiday
+
+    Falls back to the most recent available file if the exact date isn't found.
+    """
+    # Determine which trading day this newsletter describes
+    try:
+        from datetime import date as date_cls
+        d = date_cls.fromisoformat(str(newsletter_date))
+        data_date = str(market_data_date_for_newsletter(d))
+    except Exception:
+        data_date = str(newsletter_date)
+
+    exact = os.path.join(config.MARKET_DATA_DIR, f"{data_date}.json")
     if os.path.exists(exact):
         return load_json(exact)
 

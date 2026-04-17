@@ -1,1 +1,2 @@
 schwab-py>=1.4.0
+holidays>=0.46

@@ -33,6 +33,7 @@ SCRIPTS_DIR = BASE_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import config
+from trading_calendar import is_trading_day, market_data_date_for_newsletter
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.urandom(32)
@@ -155,13 +156,23 @@ def build_dashboard_data(target_date):
     brief         = json.loads(brief_path.read_text())    if brief_exists    else {}
     approved_data = json.loads(approved_path.read_text()) if approved_exists else {}
 
-    # Market data: use today's if available, otherwise most recent file
+    # Market data: look for the previous trading day's data first (correct date for newsletter)
+    from datetime import date as date_cls
+    d = date_cls.fromisoformat(target_date)
+    prev_trading_day = str(market_data_date_for_newsletter(d))
+    prev_market_path = BASE_DIR / config.MARKET_DATA_DIR / f"{prev_trading_day}.json"
+
     market = {}
     market_file_date = None
-    if market_exists:
+    if prev_market_path.exists():
+        market = json.loads(prev_market_path.read_text())
+        market_file_date = prev_trading_day
+    elif market_exists:
+        # Today's data exists (unusual but possible)
         market = json.loads(market_path.read_text())
         market_file_date = target_date
     else:
+        # Fall back to most recent available file
         market_dir = BASE_DIR / config.MARKET_DATA_DIR
         if market_dir.exists():
             files = sorted(market_dir.glob("*.json"), reverse=True)
@@ -479,6 +490,9 @@ def status():
 
 def job_fetch_options():
     """3:50 PM ET — fetch options chain while 0DTE contracts are still active."""
+    if not is_trading_day():
+        app.logger.info("Skipping options fetch — not a trading day.")
+        return
     app.logger.info("Scheduled: fetch options chain (phase 1)...")
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "options"],
@@ -493,6 +507,9 @@ def job_fetch_options():
 
 def job_fetch_quotes():
     """4:35 PM ET — fetch closing quotes, merge with options data, re-render pending drafts."""
+    if not is_trading_day():
+        app.logger.info("Skipping quotes fetch — not a trading day.")
+        return
     app.logger.info("Scheduled: fetch closing quotes (phase 2)...")
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "quotes"],
@@ -525,7 +542,7 @@ def job_fetch_quotes():
 
 
 def job_auth_health():
-    """Run at 9:00 AM ET on trading days."""
+    """Run at 9:00 AM ET every weekday — token can expire over weekends and holidays too."""
     app.logger.info("Scheduled: auth_health check...")
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "auth_health.py")],
