@@ -1,12 +1,19 @@
 """
 Zero Day Newsletter — Market Data Fetcher
-Pulls previous day's closes and 0DTE SPX options volume from Schwab API.
-Run after market close (4:30 PM ET) on trading days.
 
-Cron example:
-    30 16 * * 1-5  python3 /path/to/scripts/fetch_market_data.py
+Two-phase fetch to work around Schwab's options chain expiry at 4 PM ET:
+
+  Phase 1 — options (run at 3:50 PM ET, while 0DTE contracts still active):
+      python3 scripts/fetch_market_data.py --mode options
+
+  Phase 2 — quotes (run at 4:35 PM ET, after market close):
+      python3 scripts/fetch_market_data.py --mode quotes
+
+  Full fetch (both phases at once, useful for testing):
+      python3 scripts/fetch_market_data.py
 """
 
+import argparse
 import json
 import os
 import sys
@@ -235,65 +242,101 @@ def save(data):
     return path
 
 
+# ── Load existing file (for merge) ────────────────────────────────────────────
+
+def load_existing(today):
+    path = os.path.join(config.MARKET_DATA_DIR, f"{today}.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"Fetching market data for {date.today()}...")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=["options", "quotes", "full"],
+        default="full",
+        help="options=3:50PM fetch, quotes=4:35PM fetch, full=both"
+    )
+    args = parser.parse_args()
+    today = str(date.today())
 
+    print(f"Fetching market data [{args.mode}] for {today}...")
     c = get_client()
 
-    print("  Fetching quotes...")
-    quotes = fetch_quotes(c)
+    # ── Phase 1: Options chain (3:50 PM ET) ───────────────────────────────────
+    if args.mode in ("options", "full"):
+        print("  Fetching 0DTE SPX options chain...")
+        try:
+            chain   = fetch_0dte_chain(c)
+            options = fetch_0dte_volume(chain)
+            print(f"  Options volume: {options.get('today_volume', 0):,}")
+            tn = options.get("the_number")
+            if tn:
+                print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
+                      f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
+        except Exception as e:
+            print(f"  WARNING: Could not fetch options chain — {e}")
+            options = {
+                "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
+                "call_volume": None, "put_volume": None, "put_call_ratio": None,
+                "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
+            }
 
-    print("  Fetching SPX 50-day MA...")
-    ma_50 = fetch_50day_ma(c)
-    if ma_50 is not None:
-        quotes["spx"]["ma_50"] = ma_50
-    else:
-        quotes["spx"]["ma_50"] = None
-
-    print("  Fetching 0DTE SPX options chain...")
-    try:
-        chain   = fetch_0dte_chain(c)
-        options = fetch_0dte_volume(chain)
-    except Exception as e:
-        print(f"  WARNING: Could not fetch options chain — {e}")
-        print("  (This is normal after market close. Will retry next trading day.)")
-        options = {
-            "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
-            "call_volume": None, "put_volume": None, "put_call_ratio": None,
-            "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
+        # Merge with existing file if quotes already there (full mode),
+        # or start fresh (options-only mode)
+        existing = load_existing(today) or {}
+        payload = {
+            "date":       today,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+            "spx": existing.get("spx", {}),
+            "vix": existing.get("vix", {}),
+            "spy": existing.get("spy", {}),
+            "qqq": existing.get("qqq", {}),
+            "options": options,
         }
+        path = save(payload)
+        print(f"Options data saved to {path}")
 
-    payload = {
-        "date":    str(date.today()),
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-        **quotes,
-        "options": options,
-    }
+    # ── Phase 2: Quotes + MA (4:35 PM ET) ────────────────────────────────────
+    if args.mode in ("quotes", "full"):
+        print("  Fetching quotes (SPX, VIX, SPY, QQQ)...")
+        quotes = fetch_quotes(c)
 
-    path = save(payload)
+        print("  Fetching SPX 50-day MA...")
+        ma_50 = fetch_50day_ma(c)
+        quotes["spx"]["ma_50"] = ma_50
 
-    # Pretty print summary
-    print("\n-- Market Snapshot --------------------------")
-    for ticker in ["spx", "vix", "spy", "qqq"]:
-        d = payload[ticker]
-        arrow = "+" if d["pct_change"] >= 0 else "-"
-        print(f"  {ticker.upper():4s}  {d['close']:>10,.2f}  {arrow} {abs(d['pct_change']):.2f}%")
-    print(f"\n  SPX 50-day MA:       {f'{ma_50:,.2f}' if ma_50 else 'unavailable'}")
-    vol = options['today_volume']
-    avg = options['volume_20day_avg']
-    print(f"  0DTE Volume:         {f'{vol:,}' if vol is not None else 'unavailable'}")
-    print(f"  20-day Avg Volume:   {f'{avg:,}' if avg is not None else 'unavailable'}")
-    if options.get("vs_average_pct") is not None:
-        print(f"  vs Average:          {options['vs_average_pct']:+.1f}%")
-    if options.get("put_call_ratio") is not None:
-        print(f"  Put/Call Ratio:      {options['put_call_ratio']:.2f}")
-    tn = options.get("the_number")
-    if tn:
-        print(f"  Best 0DTE trade:     SPX {tn['strike']:.0f} {tn['type'].upper()} "
-              f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
-    print(f"\nDone. Saved to {path}")
+        # Merge with existing file (preserves options data from phase 1)
+        existing = load_existing(today) or {}
+        payload = {
+            "date":       today,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+            **quotes,
+            "options": existing.get("options", {
+                "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
+                "call_volume": None, "put_volume": None, "put_call_ratio": None,
+                "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
+            }),
+        }
+        path = save(payload)
+
+        print("\n-- Market Snapshot --------------------------")
+        for ticker in ["spx", "vix", "spy", "qqq"]:
+            d = payload[ticker]
+            arrow = "+" if (d.get("pct_change") or 0) >= 0 else "-"
+            close = d.get("close")
+            pct   = abs(d.get("pct_change") or 0)
+            print(f"  {ticker.upper():4s}  {close:>10,.2f}  {arrow} {pct:.2f}%") if close else print(f"  {ticker.upper():4s}  unavailable")
+        print(f"\n  SPX 50-day MA:  {f'{ma_50:,.2f}' if ma_50 else 'unavailable'}")
+        opts = payload["options"]
+        vol  = opts.get("today_volume")
+        print(f"  0DTE Volume:    {f'{vol:,}' if vol is not None else 'unavailable (run --mode options before 4PM)'}")
+        print(f"\nDone. Saved to {path}")
 
 
 if __name__ == "__main__":

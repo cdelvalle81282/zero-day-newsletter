@@ -477,18 +477,51 @@ def status():
 
 # ── Scheduled jobs ────────────────────────────────────────────────────────────
 
-def job_fetch_market_data():
-    """Run at 4:30 PM ET on trading days."""
-    app.logger.info("Scheduled: fetch_market_data starting...")
+def job_fetch_options():
+    """3:50 PM ET — fetch options chain while 0DTE contracts are still active."""
+    app.logger.info("Scheduled: fetch options chain (phase 1)...")
     result = subprocess.run(
-        ["python3", str(SCRIPTS_DIR / "fetch_market_data.py")],
+        ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "options"],
         cwd=str(BASE_DIR),
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        app.logger.error(f"fetch_market_data failed:\n{result.stderr}")
+        app.logger.error(f"options fetch failed:\n{result.stderr}")
     else:
-        app.logger.info(f"fetch_market_data done:\n{result.stdout}")
+        app.logger.info(f"options fetch done:\n{result.stdout}")
+
+
+def job_fetch_quotes():
+    """4:35 PM ET — fetch closing quotes, merge with options data, re-render pending drafts."""
+    app.logger.info("Scheduled: fetch closing quotes (phase 2)...")
+    result = subprocess.run(
+        ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "quotes"],
+        cwd=str(BASE_DIR),
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        app.logger.error(f"quotes fetch failed:\n{result.stderr}")
+        return
+
+    app.logger.info(f"quotes fetch done:\n{result.stdout}")
+
+    # Auto-re-render today's draft if it exists and isn't approved yet
+    today = str(date.today())
+    draft_path    = DRAFTS_DIR / f"{today}.html"
+    approved_path = DRAFTS_DIR / f"{today}.approved"
+    brief_path    = BASE_DIR / config.DAILY_BRIEF_DIR / f"{today}.json"
+
+    if draft_path.exists() and not approved_path.exists() and brief_path.exists():
+        app.logger.info(f"Auto re-rendering draft for {today} with fresh market data...")
+        html_path, err = run_assembly(today)
+        if err:
+            app.logger.warning(f"Auto re-render failed: {err}")
+        else:
+            app.logger.info(f"Draft re-rendered: {html_path}")
+            notify_preview_ready(
+                today,
+                json.loads(brief_path.read_text()).get("signal_color", "yellow")
+            )
 
 
 def job_auth_health():
@@ -506,10 +539,15 @@ def job_auth_health():
 
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone="America/New_York")
-    # Market data fetch — 4:30 PM ET, Mon-Fri
-    scheduler.add_job(job_fetch_market_data, "cron",
-                      day_of_week="mon-fri", hour=16, minute=30,
-                      id="fetch_market_data")
+    # Phase 1: options chain — 3:50 PM ET, Mon-Fri (before 0DTE contracts expire at 4 PM)
+    scheduler.add_job(job_fetch_options, "cron",
+                      day_of_week="mon-fri", hour=15, minute=50,
+                      id="fetch_options")
+    # Phase 2: closing quotes — 4:35 PM ET, Mon-Fri (after market close)
+    # Also auto-re-renders pending draft with complete data
+    scheduler.add_job(job_fetch_quotes, "cron",
+                      day_of_week="mon-fri", hour=16, minute=35,
+                      id="fetch_quotes")
     # Auth health check — 9:00 AM ET, Mon-Fri
     scheduler.add_job(job_auth_health, "cron",
                       day_of_week="mon-fri", hour=9, minute=0,
