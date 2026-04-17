@@ -125,12 +125,26 @@ def fetch_50day_ma(c):
     return round(sum(last_50) / len(last_50), 2)
 
 
-def fetch_0dte_chain(c):
+def fetch_0dte_chain(c, debug=False):
     """Fetch the full SPX 0DTE options chain. Returns raw chain JSON."""
     today = date.today()
     resp = c.get_option_chain("SPX", from_date=today, to_date=today)
     resp.raise_for_status()
-    return resp.json()
+    chain = resp.json()
+
+    if debug:
+        # Print first contract's full structure so we can verify field names
+        for exp_map in ["callExpDateMap", "putExpDateMap"]:
+            for exp_date, strikes in chain.get(exp_map, {}).items():
+                for strike, contracts in list(strikes.items())[:1]:
+                    import json as _json
+                    print(f"\n-- Sample contract ({exp_map}, strike {strike}) --")
+                    print(_json.dumps(contracts[0], indent=2)[:800])
+                    break
+                break
+            break
+
+    return chain
 
 
 def fetch_0dte_volume(chain):
@@ -157,12 +171,18 @@ def fetch_0dte_volume(chain):
                     vol_map[strike] = vol_map.get(strike, 0) + vol
 
                     # The Number: find biggest intraday % gainer
+                    # Schwab returns OHLC at top level in camelCase
                     # Need meaningful open price (> $0.05) and real volume (> 50 contracts)
-                    day       = contract.get("day", {})
-                    open_px   = day.get("open") or contract.get("openPrice", 0)
-                    high_px   = day.get("high") or contract.get("highPrice", 0)
-                    last_px   = day.get("last") or contract.get("last", 0)
-                    day_vol   = day.get("volume") or vol
+                    open_px = (contract.get("openPrice")
+                               or contract.get("open")
+                               or contract.get("day", {}).get("open", 0))
+                    high_px = (contract.get("highPrice")
+                               or contract.get("high")
+                               or contract.get("day", {}).get("high", 0))
+                    last_px = (contract.get("lastPrice")
+                               or contract.get("last")
+                               or contract.get("day", {}).get("last", 0))
+                    day_vol = vol
 
                     if open_px and open_px >= 0.05 and high_px > open_px and day_vol >= 50:
                         pct = (high_px - open_px) / open_px * 100
