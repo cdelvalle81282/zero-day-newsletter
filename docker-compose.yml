@@ -9,6 +9,10 @@ services:
       - "8001:8001"
     env_file:
       - .env
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - ./schwab_token.json:/opt/zeroday/schwab_token.json
       - ./daily_briefs:/opt/zeroday/daily_briefs

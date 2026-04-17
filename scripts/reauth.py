@@ -50,9 +50,11 @@ def main():
             callback_url=config.SCHWAB_CALLBACK_URL,
             token_path=config.TOKEN_FILE,
         )
+        import stat
+        os.chmod(config.TOKEN_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0600
         print()
         print("✓ Authentication successful.")
-        print(f"✓ Token saved to {config.TOKEN_FILE}")
+        print(f"✓ Token saved to {config.TOKEN_FILE} (permissions: owner-only)")
         print()
         print("You're good for the next 7 days.")
         print("auth_health.py will remind you before it expires again.")

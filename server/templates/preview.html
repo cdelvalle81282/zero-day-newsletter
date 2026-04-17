@@ -347,7 +347,11 @@
     if (spin) spin.classList.add('show');
     showToast('Re-rendering...', 'info');
 
-    fetch('/0dte-daily/rerender/{{ target_date }}', { method: 'POST' })
+    fetch('/0dte-daily/rerender/{{ target_date }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
       .then(r => r.json())
       .then(data => {
         if (spin) spin.classList.remove('show');

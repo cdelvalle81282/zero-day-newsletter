@@ -6,8 +6,13 @@ WORKDIR /opt/zeroday
 COPY server/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy everything
-COPY . .
+# Create non-root user
+RUN addgroup --system app && adduser --system --ingroup app app
+
+# Copy everything and set ownership
+COPY --chown=app:app . .
+
+USER app
 
 EXPOSE 8001
 

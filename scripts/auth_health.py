@@ -88,7 +88,7 @@ def send_slack(days_remaining, expiry_dt):
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    urllib.request.urlopen(req)
+    urllib.request.urlopen(req, timeout=10)
     print("Slack reminder sent.")
 
 

@@ -16,6 +16,8 @@ import re
 import sys
 from datetime import date, datetime, timedelta
 
+from html import escape as html_escape
+
 import config
 from trading_calendar import market_data_date_for_newsletter, is_trading_day
 
@@ -262,32 +264,32 @@ def build_tokens(brief, market, target_date):
         "SIGNAL_COLOR_HEX":   sig["hex"],
         "SIGNAL_ICON":        sig["icon"],
         "SIGNAL_LABEL":       sig["label"],
-        "SIGNAL_TEXT":        brief.get("signal_text", ""),
-        "SIGNAL_ATTRIBUTION": author_data["name"],
+        "SIGNAL_TEXT":        html_escape(brief.get("signal_text", "")),
+        "SIGNAL_ATTRIBUTION": html_escape(author_data["name"]),
 
-        # Levels
-        "LEVEL_R2_LABEL":  brief.get("level_resistance_2_label", "Resistance 2"),
+        # Levels (labels are user text, values are formatted numbers — both escaped)
+        "LEVEL_R2_LABEL":  html_escape(brief.get("level_resistance_2_label", "Resistance 2")),
         "LEVEL_R2_VALUE":  fmt_price(brief.get("level_resistance_2_value")),
-        "LEVEL_R1_LABEL":  brief.get("level_resistance_1_label", "Resistance 1"),
+        "LEVEL_R1_LABEL":  html_escape(brief.get("level_resistance_1_label", "Resistance 1")),
         "LEVEL_R1_VALUE":  fmt_price(brief.get("level_resistance_1_value")),
-        "LEVEL_KEY_LABEL": brief.get("level_key_label", "Key Level"),
+        "LEVEL_KEY_LABEL": html_escape(brief.get("level_key_label", "Key Level")),
         "LEVEL_KEY_VALUE": fmt_price(brief.get("level_key_value")),
-        "LEVEL_S1_LABEL":  brief.get("level_support_1_label", "Support 1"),
+        "LEVEL_S1_LABEL":  html_escape(brief.get("level_support_1_label", "Support 1")),
         "LEVEL_S1_VALUE":  fmt_price(brief.get("level_support_1_value")),
-        "LEVEL_S2_LABEL":  brief.get("level_support_2_label", "Support 2"),
+        "LEVEL_S2_LABEL":  html_escape(brief.get("level_support_2_label", "Support 2")),
         "LEVEL_S2_VALUE":  fmt_price(brief.get("level_support_2_value")),
-        "LEVELS_NOTE":     brief.get("levels_note", ""),
+        "LEVELS_NOTE":     html_escape(brief.get("levels_note", "")),
 
         # The Number — auto from options chain, fallback to brief
-        "THE_NUMBER":      the_number_value,
-        "THE_NUMBER_TEXT": the_number_text,
+        "THE_NUMBER":      html_escape(the_number_value) if the_number_value else "",
+        "THE_NUMBER_TEXT": html_escape(the_number_text) if the_number_text else "",
 
         # Volume Anomaly — auto from options chain, fallback to brief
-        "VOLUME_HEADLINE": volume_headline,
-        "VOLUME_TEXT":     volume_text,
+        "VOLUME_HEADLINE": html_escape(volume_headline) if volume_headline else "",
+        "VOLUME_TEXT":     html_escape(volume_text) if volume_text else "",
 
         # Editor's Note — always from brief
-        "EDITOR_NOTE_TEXT": brief.get("editor_note_text", ""),
+        "EDITOR_NOTE_TEXT": html_escape(brief.get("editor_note_text", "")),
 
         # Market Snapshot
         "SNAP_SPX_VALUE":  fmt_price(spx.get("close")),
@@ -366,7 +368,7 @@ def create_optipub_draft(html, brief, target_date,
         method="POST",
     )
 
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=15) as resp:
         result = json.loads(resp.read())
 
     return result.get("data", {}).get("id"), title
