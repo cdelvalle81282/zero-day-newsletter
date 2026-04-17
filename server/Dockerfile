@@ -6,8 +6,8 @@ WORKDIR /opt/zeroday
 COPY server/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Create non-root user
-RUN addgroup --system app && adduser --system --ingroup app app
+# Create non-root user with pinned UID/GID so host bind-mount ownership can be set
+RUN addgroup --system --gid 10001 app && adduser --system --uid 10001 --ingroup app app
 
 # Copy everything and set ownership
 COPY --chown=app:app . .

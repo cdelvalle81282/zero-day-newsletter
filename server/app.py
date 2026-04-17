@@ -54,7 +54,14 @@ BRIEF_ALLOWED_KEYS = {
     "level_support_1_label", "level_support_1_value",
     "level_support_2_label", "level_support_2_value",
     "levels_note",
+    "the_number_value", "the_number_text",
+    "volume_anomaly_headline", "volume_anomaly_text",
     "editor_note_text",
+}
+
+NUMERIC_LEVEL_KEYS = {
+    "level_resistance_2_value", "level_resistance_1_value",
+    "level_key_value", "level_support_1_value", "level_support_2_value",
 }
 
 VALID_SIGNAL_COLORS = {"green", "yellow", "red"}
@@ -64,13 +71,18 @@ MAX_TEXT_LEN = 5000
 # ── Security helpers ──────────────────────────────────────────────────────────
 
 def validate_date(d):
-    """Reject any target_date that isn't YYYY-MM-DD format."""
-    if not DATE_RE.fullmatch(d):
+    """Reject any target_date that isn't a real YYYY-MM-DD calendar date."""
+    try:
+        datetime.strptime(d, "%Y-%m-%d")
+    except (ValueError, TypeError):
         abort(400, "Invalid date format")
 
 
 def validate_brief(brief):
     """Validate brief JSON keys, types, and values. Returns error string or None."""
+    if not isinstance(brief, dict):
+        return "Brief must be a JSON object"
+
     extra = set(brief.keys()) - BRIEF_ALLOWED_KEYS
     if extra:
         return f"Unknown keys: {', '.join(sorted(extra))}"
@@ -84,14 +96,18 @@ def validate_brief(brief):
         return f"Invalid author: {author}"
 
     d = brief.get("date", "")
-    if d and not DATE_RE.fullmatch(d):
-        return "Invalid date format in brief"
+    if d:
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return "Invalid date format in brief"
 
     for key, val in brief.items():
-        if key.endswith("_value"):
+        if key in NUMERIC_LEVEL_KEYS:
             if val is not None and not isinstance(val, (int, float)):
                 return f"{key} must be numeric or null"
-        elif key.endswith(("_text", "_label", "_note", "_attribution")):
+        elif key in ("created_at", "date", "status", "signal_color", "author") or \
+                key.endswith(("_text", "_label", "_note", "_attribution", "_headline", "_value")):
             if val is not None and not isinstance(val, str):
                 return f"{key} must be a string"
             if isinstance(val, str) and len(val) > MAX_TEXT_LEN:
@@ -412,8 +428,8 @@ def submit():
     except Exception:
         return jsonify({"ok": False, "error": "Invalid JSON"}), 400
 
-    if not brief:
-        return jsonify({"ok": False, "error": "Empty body"}), 400
+    if not isinstance(brief, dict) or not brief:
+        return jsonify({"ok": False, "error": "Brief must be a non-empty JSON object"}), 400
 
     err = validate_brief(brief)
     if err:
@@ -522,8 +538,25 @@ def approve(target_date):
         html   = draft_path.read_text(encoding="utf-8")
 
         body = request.get_json(silent=True) or {}
-        included = [int(i) for i in body.get("included_segments", [])]
-        excluded = [int(i) for i in body.get("excluded_segments", [])]
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Request body must be a JSON object"}), 400
+
+        default_seg_ids = {
+            int(s.strip())
+            for s in config.OPTIPUB_DEFAULT_SEGMENTS.split(",")
+            if s.strip()
+        }
+        allowed_ids = set(config.SEGMENT_NAMES.keys()) | default_seg_ids
+        included_raw = body.get("included_segments", [])
+        excluded_raw = body.get("excluded_segments", [])
+        try:
+            included = [int(i) for i in included_raw]
+            excluded = [int(i) for i in excluded_raw]
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Segment IDs must be integers"}), 400
+        unknown = (set(included) | set(excluded)) - allowed_ids
+        if unknown:
+            return jsonify({"ok": False, "error": f"Unknown segment IDs: {sorted(unknown)}"}), 400
 
         msg_id, title = create_optipub_draft(
             html, brief, target_date,
@@ -558,7 +591,9 @@ def send_test(target_date):
             "error": "OPTIPUB_API_KEY not set. Add it to the server .env file."
         }), 503
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Request body must be a JSON object"}), 400
     email = data.get("email", "").strip()
     if not email:
         return jsonify({"ok": False, "error": "No email address provided."}), 400

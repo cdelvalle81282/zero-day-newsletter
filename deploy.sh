@@ -11,8 +11,14 @@ LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Deploying 0DTE Daily to $SERVER..."
 
-# 1. Create remote directory structure
-ssh "$SERVER" "mkdir -p $REMOTE_DIR/daily_briefs $REMOTE_DIR/market_data $REMOTE_DIR/drafts"
+# 1. Create remote directory structure and set ownership to container user (UID 10001).
+# Requires the deploy user to have passwordless sudo for chown:
+#   echo 'deploy ALL=(ALL) NOPASSWD: /bin/chown' | sudo tee /etc/sudoers.d/deploy-chown
+ssh "$SERVER" "
+  mkdir -p $REMOTE_DIR/daily_briefs $REMOTE_DIR/market_data $REMOTE_DIR/drafts
+  touch $REMOTE_DIR/schwab_token.json
+  sudo chown -R 10001:10001 $REMOTE_DIR/daily_briefs $REMOTE_DIR/market_data $REMOTE_DIR/drafts $REMOTE_DIR/schwab_token.json
+"
 
 # 2. Sync all project files via scp (Windows-compatible)
 echo "==> Copying files..."
