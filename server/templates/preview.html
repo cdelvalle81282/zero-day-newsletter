@@ -198,7 +198,6 @@
       <label style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:#0A1628; border-radius:3px; margin-bottom:4px; cursor:pointer; font-family:Tahoma,sans-serif; font-size:13px; color:#D1D5DB;">
         <input type="checkbox" name="include_seg" value="{{ seg.id }}" style="width:15px; height:15px; accent-color:#22C55E;">
         <span>{{ seg.name }}</span>
-        {% if seg.count is not none %}<span style="color:#4B6A8A; font-size:11px; margin-left:auto;">{{ seg.count }}</span>{% endif %}
       </label>
       {% endfor %}
     </div>

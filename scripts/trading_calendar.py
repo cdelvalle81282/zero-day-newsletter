@@ -4,16 +4,22 @@ Uses the 'holidays' package for NYSE-observed holidays.
 """
 
 from datetime import date, timedelta
+from functools import lru_cache
 import holidays
+
+
+@lru_cache(maxsize=10)
+def _nyse_holidays(year):
+    """Cached NYSE holiday set per year — avoids rebuilding on every call."""
+    return holidays.NYSE(years=year)
 
 
 def is_trading_day(d=None):
     """Return True if d is a NYSE trading day (not weekend, not holiday)."""
     d = d or date.today()
-    if d.weekday() >= 5:        # Saturday=5, Sunday=6
+    if d.weekday() >= 5:
         return False
-    nyse = holidays.NYSE(years=d.year)
-    return d not in nyse
+    return d not in _nyse_holidays(d.year)
 
 
 def previous_trading_day(d=None):
@@ -48,11 +54,7 @@ def trading_days_in_range(start, end):
 def market_data_date_for_newsletter(newsletter_date=None):
     """
     Return the trading day whose market data belongs in a given newsletter.
-
-    The newsletter describes the PREVIOUS trading day's action:
-      - Monday newsletter → uses Friday's data
-      - Tuesday newsletter → uses Monday's data
-      - A day after a holiday → uses the last trading day before it
+    Monday newsletter → Friday's data; post-holiday → last trading day before it.
     """
     d = newsletter_date or date.today()
     return previous_trading_day(d)

@@ -56,7 +56,7 @@ def find_market_data(newsletter_date):
     if not files:
         return None
     path = os.path.join(config.MARKET_DATA_DIR, files[-1])
-    print(f"  WARNING: No market data for {target_date}, using {files[-1]}")
+    print(f"  WARNING: No market data for {data_date}, using {files[-1]}")
     return load_json(path)
 
 

@@ -138,9 +138,8 @@ def fetch_0dte_chain(c, debug=False):
         for exp_map in ["callExpDateMap", "putExpDateMap"]:
             for exp_date, strikes in chain.get(exp_map, {}).items():
                 for strike, contracts in list(strikes.items())[:1]:
-                    import json as _json
                     print(f"\n-- Sample contract ({exp_map}, strike {strike}) --")
-                    print(_json.dumps(contracts[0], indent=2)[:800])
+                    print(json.dumps(contracts[0], indent=2)[:800])
                     break
                 break
             break
@@ -270,7 +269,7 @@ def load_existing(today):
     if os.path.exists(path):
         with open(path) as f:
             return json.load(f)
-    return None
+    return {}
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -318,7 +317,7 @@ def main():
 
         # Merge with existing file if quotes already there (full mode),
         # or start fresh (options-only mode)
-        existing = load_existing(today) or {}
+        existing = load_existing(today)
         payload = {
             "date":       today,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
@@ -340,8 +339,12 @@ def main():
         ma_50 = fetch_50day_ma(c)
         quotes["spx"]["ma_50"] = ma_50
 
-        # Merge with existing file (preserves options data from phase 1)
-        existing = load_existing(today) or {}
+        # In full mode, options is already in memory from phase 1 above.
+        # In quotes-only mode, load from disk (options were fetched separately earlier).
+        if args.mode == "full":
+            existing = {}
+        else:
+            existing = load_existing(today)
         payload = {
             "date":       today,
             "fetched_at": datetime.utcnow().isoformat() + "Z",

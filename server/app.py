@@ -34,6 +34,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import config
 from trading_calendar import is_trading_day, market_data_date_for_newsletter
+from assemble_newsletter import signal_config, fmt_volume
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.urandom(32)
@@ -135,12 +136,6 @@ def _fmt_time(iso):
         return iso[:16] if iso else ""
 
 
-def _fmt_volume(v):
-    if not v: return None
-    if v >= 1_000_000: return f"{v/1_000_000:.1f}M"
-    if v >= 1_000:     return f"{v/1_000:.0f}K"
-    return str(v)
-
 
 def build_dashboard_data(target_date):
     brief_path    = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
@@ -180,13 +175,9 @@ def build_dashboard_data(target_date):
                 market = json.loads(files[0].read_text())
                 market_file_date = files[0].stem
 
-    # Signal label
-    signal_labels = {"green": "GREEN LIGHT", "yellow": "YELLOW LIGHT", "red": "RED LIGHT"}
     signal_color = brief.get("signal_color", "")
-
-    # Author
-    author_key  = brief.get("author", config.DEFAULT_AUTHOR)
-    author_data = config.AUTHORS.get(author_key, config.AUTHORS[config.DEFAULT_AUTHOR])
+    author_key   = brief.get("author", config.DEFAULT_AUTHOR)
+    author_data  = config.AUTHORS.get(author_key, config.AUTHORS[config.DEFAULT_AUTHOR])
 
     # Levels
     levels = {
@@ -265,13 +256,13 @@ def build_dashboard_data(target_date):
         "draft":         draft_exists,
         "approved":      approved_exists,
         "signal_color":  signal_color,
-        "signal_label":  signal_labels.get(signal_color, ""),
+        "signal_label":  signal_config(signal_color)["label"] if signal_color else "",
         "signal_text":   brief.get("signal_text", ""),
         "author_name":   author_data["name"],
         "levels":        levels,
         "tickers":       tickers,
         "spx_ma":        f"{market.get('spx',{}).get('ma_50'):,.2f}" if market.get("spx", {}).get("ma_50") else None,
-        "options_volume": _fmt_volume(vol),
+        "options_volume": fmt_volume(vol),
         "options_vs_avg": f"{vs:+.0f}%" if vs is not None else None,
         "options_vs_avg_pos": (vs or 0) >= 0,
         "the_number":      the_number,
@@ -399,15 +390,8 @@ def preview(target_date):
         for s in config.OPTIPUB_DEFAULT_SEGMENTS.split(",")
         if s.strip()
     ]
-    # Segment names lookup from the IDs we know
-    known_segments = {
-        11:  "Staff List",
-        338: "PDTE - 0DTE - Paid",
-        339: "PDTE Paid List (static)",
-        743: "VDTE - 0DTE - VIP",
-    }
     segments = [
-        {"id": sid, "name": known_segments.get(sid, f"Segment {sid}"), "count": None}
+        {"id": sid, "name": config.SEGMENT_NAMES.get(sid, f"Segment {sid}")}
         for sid in default_seg_ids
     ]
 
@@ -515,9 +499,7 @@ def send_test(target_date):
         brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
         brief     = json.loads(brief_path.read_text()) if brief_path.exists() else {}
 
-        signal_label = {
-            "green": "GREEN LIGHT", "yellow": "YELLOW LIGHT", "red": "RED LIGHT"
-        }.get(brief.get("signal_color", "yellow"), "YELLOW LIGHT")
+        signal_label = signal_config(brief.get("signal_color", "yellow"))["label"]
         subject = f"[TEST] 0DTE Daily — {signal_label} — {target_date}"
 
         payload = json.dumps({

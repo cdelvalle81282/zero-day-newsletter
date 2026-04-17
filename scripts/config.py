@@ -58,6 +58,14 @@ AUTHORS = {
 }
 DEFAULT_AUTHOR = "licia"
 
+# ── Segment display names (shown in the approve picker) ──────────────────────
+SEGMENT_NAMES = {
+    11:  "Staff List",
+    338: "PDTE - 0DTE - Paid",
+    339: "PDTE Paid List (static)",
+    743: "VDTE - 0DTE - VIP",
+}
+
 # ── OptiPub send settings ─────────────────────────────────────────────────────
 # Sender ID to use for test sends and drafts.
 # id:46 = "0DTE" sender on pub 41 — use until pub 103 gets its own sender.
