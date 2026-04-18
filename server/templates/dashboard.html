@@ -394,15 +394,18 @@
     <div class="card">
       <div class="card-header">
         Market Snapshot
-        {% if today.market_date %}
-          {% if today.market_date == today.date %}
-            <span style="color:#4ADE80;">{{ today.market_date }} close</span>
+        <span id="syncStatus">
+          {% if today.market_date %}
+            {% if today.market_date == today.date %}
+              <span style="color:#4ADE80;">{{ today.market_date }} close</span>
+            {% else %}
+              <span style="color:#FB923C;">Last close: {{ today.market_date }} &nbsp;·&nbsp; Today's pending</span>
+            {% endif %}
           {% else %}
-            <span style="color:#FB923C;">Last close: {{ today.market_date }} &nbsp;·&nbsp; Today's pending 4:30 PM ET</span>
+            <span style="color:#4B6A8A;">No data yet</span>
           {% endif %}
-        {% else %}
-          <span style="color:#4B6A8A;">No data yet</span>
-        {% endif %}
+        </span>
+        <button id="syncBtn" onclick="syncMarketData()" class="btn-sm btn-secondary" style="font-size:10px; padding:3px 10px; margin-left:8px;">Sync</button>
       </div>
       <div class="card-body">
         {% if today.market_date %}
@@ -622,6 +625,40 @@
   }
   countdown();
   setInterval(countdown, 1000);
+
+  // Sync market data
+  function syncMarketData() {
+    const btn = document.getElementById('syncBtn');
+    const status = document.getElementById('syncStatus');
+    btn.textContent = 'Syncing…';
+    btn.disabled = true;
+    status.innerHTML = '<span style="color:#60A5FA;">Fetching…</span>';
+
+    fetch('/0dte-daily/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'quotes' }),
+    })
+    .then(r => r.json())
+    .then(resp => {
+      if (resp.ok) {
+        status.innerHTML = '<span style="color:#4ADE80;">Synced ✓ — reloading…</span>';
+        btn.textContent = 'Sync';
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        const msg = (resp.error || 'unknown error').substring(0, 200);
+        status.innerHTML = `<span style="color:#CC3333;">Sync failed</span>`;
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+        alert('Sync failed:\n\n' + msg);
+      }
+    })
+    .catch(() => {
+      status.innerHTML = '<span style="color:#CC3333;">Could not reach server</span>';
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+    });
+  }
 </script>
 </body>
 </html>

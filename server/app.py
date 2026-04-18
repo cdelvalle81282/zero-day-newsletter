@@ -218,6 +218,28 @@ def notify_preview_ready(target_date, signal_color="yellow"):
         app.logger.warning(f"Slack notification failed: {e}")
 
 
+def notify_fetch_failed(job_name, error_detail):
+    webhook = config.SLACK_WEBHOOK_URL
+    if not webhook:
+        return
+    import urllib.request
+    payload = json.dumps({
+        "text": (
+            f":rotating_light: *0DTE Daily — market data fetch failed*\n"
+            f"Job: `{job_name}`\n"
+            f"```{error_detail[:500]}```"
+        )
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            webhook, data=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        app.logger.warning(f"Slack fetch-failed notification error: {e}")
+
+
 def notify_approved(target_date, msg_id, title):
     webhook = config.SLACK_WEBHOOK_URL
     if not webhook:
@@ -638,6 +660,40 @@ def send_test(target_date):
         return jsonify({"ok": False, "error": "Send failed. Check server logs."}), 500
 
 
+@app.route("/0dte-daily/sync", methods=["POST"])
+@require_auth
+def sync_market_data():
+    import zoneinfo
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "Request body must be a JSON object"}), 400
+    mode = body.get("mode", "quotes")
+    if mode not in ("options", "quotes", "full"):
+        return jsonify({"ok": False, "error": "Invalid mode"}), 400
+
+    et_date = datetime.now(zoneinfo.ZoneInfo("America/New_York")).date().isoformat()
+    try:
+        result = subprocess.run(
+            ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"),
+             "--mode", mode, "--date", et_date],
+            cwd=str(BASE_DIR),
+            capture_output=True, text=True,
+            timeout=60
+        )
+    except subprocess.TimeoutExpired:
+        notify_fetch_failed(f"manual sync ({mode})", "Timed out after 60s")
+        return jsonify({"ok": False, "error": "Fetch timed out"}), 500
+
+    if result.returncode != 0:
+        error = result.stderr or result.stdout or "unknown error"
+        notify_fetch_failed(f"manual sync ({mode})", error)
+        app.logger.error(f"Manual sync ({mode}) failed:\n{error}")
+        return jsonify({"ok": False, "error": error[:500]}), 500
+
+    app.logger.info(f"Manual sync ({mode}) succeeded")
+    return jsonify({"ok": True, "output": result.stdout})
+
+
 @app.route("/0dte-daily/rerender/<target_date>", methods=["POST"])
 @require_auth
 def rerender(target_date):
@@ -676,7 +732,9 @@ def job_fetch_options():
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        app.logger.error(f"options fetch failed:\n{result.stderr}")
+        error = result.stderr or result.stdout or "unknown error"
+        app.logger.error(f"options fetch failed:\n{error}")
+        notify_fetch_failed("options (3:50 PM ET)", error)
     else:
         app.logger.info(f"options fetch done:\n{result.stdout}")
 
@@ -692,7 +750,9 @@ def job_fetch_quotes():
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        app.logger.error(f"quotes fetch failed:\n{result.stderr}")
+        error = result.stderr or result.stdout or "unknown error"
+        app.logger.error(f"quotes fetch failed:\n{error}")
+        notify_fetch_failed("quotes (4:35 PM ET)", error)
         return
 
     app.logger.info(f"quotes fetch done:\n{result.stdout}")

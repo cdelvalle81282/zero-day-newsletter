@@ -398,6 +398,9 @@ def main():
                     print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
                           f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
             except Exception as e:
+                if "invalid_client" in str(e) or "Unauthorized" in str(e) or "OAuthError" in type(e).__name__:
+                    print(f"ERROR: Schwab authentication failed — {e}")
+                    sys.exit(1)
                 print(f"  WARNING: Could not fetch options chain — {e}")
                 options = {
                     "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
