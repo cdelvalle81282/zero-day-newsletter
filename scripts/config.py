@@ -73,8 +73,8 @@ SEGMENT_NAMES = {
 OPTIPUB_SENDER_ID = int(_env("OPTIPUB_SENDER_ID", "46"))
 
 # Default segments shown in the send picker (comma-separated IDs)
-# 338 = PDTE - 0DTE - Paid, 743 = VDTE - 0DTE - VIP, 11 = Staff List
-OPTIPUB_DEFAULT_SEGMENTS = _env("OPTIPUB_DEFAULT_SEGMENTS", "338,743,11")
+# 814 = F0DTE, 11 = Staff List
+OPTIPUB_DEFAULT_SEGMENTS = _env("OPTIPUB_DEFAULT_SEGMENTS", "814,11")
 
 # ── Server ────────────────────────────────────────────────────────────────────
 ZERODAY_PASSWORD = _env("ZERODAY_PASSWORD", "")   # basic auth for the form
