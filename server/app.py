@@ -631,7 +631,7 @@ def send_test(target_date):
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            f"{config.OPTIPUB_API_BASE}/messages/transactional/html",
+            f"{config.OPTIPUB_API_BASE}/messages/transactional",
             data=payload,
             headers={
                 "Content-Type": "application/json",
@@ -639,8 +639,14 @@ def send_test(target_date):
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            json.loads(resp.read())
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+            app.logger.error(f"send-test HTTP {e.code}: {body}")
+            notify_deliverability_issue(target_date, f"Test send to {email} failed — HTTP {e.code}: {body}")
+            return jsonify({"ok": False, "error": f"OptiPub error {e.code}: {body}"}), 500
 
         return jsonify({"ok": True, "email": email})
     except Exception:
