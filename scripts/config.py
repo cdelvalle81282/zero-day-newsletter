@@ -64,6 +64,7 @@ SEGMENT_NAMES = {
     338: "PDTE - 0DTE - Paid",
     339: "PDTE Paid List (static)",
     743: "VDTE - 0DTE - VIP",
+    814: "F0DTE",
 }
 
 # ── OptiPub send settings ─────────────────────────────────────────────────────
