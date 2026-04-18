@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import subprocess
+import urllib.request
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
@@ -57,6 +58,7 @@ BRIEF_ALLOWED_KEYS = {
     "the_number_value", "the_number_text",
     "volume_anomaly_headline", "volume_anomaly_text",
     "editor_note_text",
+    "editorial_url",
 }
 
 NUMERIC_LEVEL_KEYS = {
@@ -101,6 +103,10 @@ def validate_brief(brief):
             datetime.strptime(d, "%Y-%m-%d")
         except (ValueError, TypeError):
             return "Invalid date format in brief"
+
+    editorial_url = brief.get("editorial_url")
+    if editorial_url and not re.match(r'^https?://', editorial_url):
+        return "editorial_url must start with http:// or https://"
 
     for key, val in brief.items():
         if key in NUMERIC_LEVEL_KEYS:
@@ -189,25 +195,12 @@ def run_assembly(target_date):
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 
-def notify_preview_ready(target_date, signal_color="yellow"):
+def _send_slack(text):
+    """Send a Slack webhook message. Logs a warning on failure; no-ops if no webhook set."""
     webhook = config.SLACK_WEBHOOK_URL
     if not webhook:
         return
-
-    preview_url = f"{config.SERVER_BASE_URL}/0dte-daily/preview/{target_date}"
-    color_emoji = {"green": ":large_green_circle:", "red": ":red_circle:"}.get(
-        signal_color, ":large_yellow_circle:"
-    )
-
-    import urllib.request
-    payload = json.dumps({
-        "text": (
-            f"{color_emoji} *0DTE Daily draft is ready for review*\n"
-            f"Date: {target_date}\n"
-            f"<{preview_url}|Click here to preview and approve>"
-        )
-    }).encode()
-
+    payload = json.dumps({"text": text}).encode()
     try:
         req = urllib.request.Request(
             webhook, data=payload,
@@ -218,43 +211,38 @@ def notify_preview_ready(target_date, signal_color="yellow"):
         app.logger.warning(f"Slack notification failed: {e}")
 
 
+def notify_preview_ready(target_date, signal_color="yellow"):
+    preview_url = f"{config.SERVER_BASE_URL}/0dte-daily/preview/{target_date}"
+    color_emoji = {"green": ":large_green_circle:", "red": ":red_circle:"}.get(
+        signal_color, ":large_yellow_circle:"
+    )
+    _send_slack(
+        f"{color_emoji} *0DTE Daily draft is ready for review*\n"
+        f"Date: {target_date}\n"
+        f"<{preview_url}|Click here to preview and approve>"
+    )
+
+
 def notify_fetch_failed(job_name, error_detail):
-    webhook = config.SLACK_WEBHOOK_URL
-    if not webhook:
-        return
-    import urllib.request
-    payload = json.dumps({
-        "text": (
-            f":rotating_light: *0DTE Daily — market data fetch failed*\n"
-            f"Job: `{job_name}`\n"
-            f"```{error_detail[:500]}```"
-        )
-    }).encode()
-    try:
-        req = urllib.request.Request(
-            webhook, data=payload,
-            headers={"Content-Type": "application/json"}
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception as e:
-        app.logger.warning(f"Slack fetch-failed notification error: {e}")
+    _send_slack(
+        f":rotating_light: *0DTE Daily — market data fetch failed*\n"
+        f"Job: `{job_name}`\n"
+        f"```{error_detail[:500]}```"
+    )
+
+
+def notify_deliverability_issue(target_date, description):
+    _send_slack(
+        f":warning: *0DTE Daily — deliverability issue* ({target_date})\n"
+        f"{description}\nCheck server logs."
+    )
 
 
 def notify_approved(target_date, msg_id, title):
-    webhook = config.SLACK_WEBHOOK_URL
-    if not webhook:
-        return
-    import urllib.request
-    payload = json.dumps({
-        "text": f":white_check_mark: *0DTE Daily approved and posted to OptiPub*\n"
-                f"Date: {target_date} | Message ID: {msg_id}\nTitle: {title}"
-    }).encode()
-    try:
-        req = urllib.request.Request(webhook, data=payload,
-                                      headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        pass
+    _send_slack(
+        f":white_check_mark: *0DTE Daily approved and posted to OptiPub*\n"
+        f"Date: {target_date} | Message ID: {msg_id}\nTitle: {title}"
+    )
 
 
 # ── Dashboard data builder ────────────────────────────────────────────────────
@@ -589,6 +577,7 @@ def approve(target_date):
         )
     except Exception:
         app.logger.exception("approve failed")
+        notify_deliverability_issue(target_date, "OptiPub draft creation failed")
         return jsonify({"ok": False, "error": "Approve failed. Check server logs."}), 500
 
     approved_path = DRAFTS_DIR / f"{target_date}.approved"
@@ -625,10 +614,9 @@ def send_test(target_date):
         return jsonify({"ok": False, "error": "Invalid email format."}), 400
 
     try:
-        import urllib.request as _urlreq
-        html      = draft_path.read_text(encoding="utf-8")
+        html       = draft_path.read_text(encoding="utf-8")
         brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
-        brief     = json.loads(brief_path.read_text()) if brief_path.exists() else {}
+        brief      = json.loads(brief_path.read_text()) if brief_path.exists() else {}
 
         signal_label = signal_config(brief.get("signal_color", "yellow"))["label"]
         subject = f"[TEST] 0DTE Daily — {signal_label} — {target_date}"
@@ -642,7 +630,7 @@ def send_test(target_date):
             "preview_line":   f"Test send — {signal_label} — {target_date}",
         }).encode("utf-8")
 
-        req = _urlreq.Request(
+        req = urllib.request.Request(
             f"{config.OPTIPUB_API_BASE}/messages/transactional/html",
             data=payload,
             headers={
@@ -651,12 +639,13 @@ def send_test(target_date):
             },
             method="POST",
         )
-        with _urlreq.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             json.loads(resp.read())
 
         return jsonify({"ok": True, "email": email})
     except Exception:
         app.logger.exception("send-test failed")
+        notify_deliverability_issue(target_date, f"Test send to {email} failed")
         return jsonify({"ok": False, "error": "Send failed. Check server logs."}), 500
 
 
@@ -720,6 +709,54 @@ def status():
 
 
 # ── Scheduled jobs ────────────────────────────────────────────────────────────
+
+def job_morning_check():
+    today_date = date.today()
+    today_str = str(today_date)
+
+    if not is_trading_day():
+        app.logger.info("Morning check: not a trading day, skipping.")
+        return
+
+    missing = []
+
+    if not (BASE_DIR / config.DAILY_BRIEF_DIR / f"{today_str}.json").exists():
+        missing.append("Brief not submitted")
+
+    market_data_date = str(market_data_date_for_newsletter(today_date))
+    market_path = BASE_DIR / config.MARKET_DATA_DIR / f"{market_data_date}.json"
+    market_ok = False
+    if market_path.exists():
+        try:
+            md = json.loads(market_path.read_text())
+            if md.get("spx", {}).get("close"):
+                market_ok = True
+        except Exception:
+            pass
+    if not market_ok:
+        missing.append("Market data missing or incomplete")
+
+    if not (DRAFTS_DIR / f"{today_str}.html").exists():
+        missing.append("Newsletter draft not assembled")
+
+    if not missing:
+        app.logger.info(f"Morning check ({today_str}): all pipeline items complete — no notification needed.")
+        return
+
+    if not config.SLACK_WEBHOOK_URL:
+        app.logger.warning("Morning check: SLACK_WEBHOOK_URL not set, cannot notify.")
+        return
+
+    bullets = "\n".join(f"• {item}" for item in missing)
+    dashboard_url = config.SERVER_BASE_URL + "/0dte-daily/"
+    _send_slack(
+        f":alarm_clock: *0DTE Daily — not ready for send* ({today_str})\n"
+        f"It's 6:15 AM PT and the following are incomplete:\n"
+        f"{bullets}\n"
+        f"<{dashboard_url}|Go to dashboard>"
+    )
+    app.logger.info(f"Morning check: notified Slack — {len(missing)} item(s) incomplete.")
+
 
 def job_fetch_options():
     if not is_trading_day():
@@ -798,8 +835,11 @@ def start_scheduler():
     scheduler.add_job(job_auth_health, "cron",
                       day_of_week="mon-fri", hour=9, minute=0,
                       id="auth_health")
+    scheduler.add_job(job_morning_check, "cron",
+                      day_of_week="mon-fri", hour=9, minute=15,
+                      id="morning_check")
     scheduler.start()
-    app.logger.info("Scheduler started (options 3:50, quotes 4:35, auth 9:00 — all ET)")
+    app.logger.info("Scheduler started (options 3:50, quotes 4:35, auth 9:00, morning_check 9:15 — all ET)")
     return scheduler
 
 

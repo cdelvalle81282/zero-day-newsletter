@@ -250,6 +250,17 @@ def build_tokens(brief, market, target_date):
     else:
         print("  Volume Anomaly: using Daily Brief value (options data unavailable).")
 
+    editorial_url = brief.get("editorial_url", "").strip()
+    if editorial_url and re.match(r'^https?://', editorial_url):
+        editorial_link_html = (
+            f'<p style="margin: 10px 0 0 0;">'
+            f'<a href="{html_escape(editorial_url)}" style="color: #3B82F6; '
+            f'font-family: Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; '
+            f'text-decoration: none;">Read full editorial &#8594;</a></p>'
+        )
+    else:
+        editorial_link_html = ""
+
     return {
         # Date
         "ISSUE_DATE_LONG":  format_date_long(target_date),
@@ -290,6 +301,7 @@ def build_tokens(brief, market, target_date):
 
         # Editor's Note — always from brief
         "EDITOR_NOTE_TEXT": html_escape(brief.get("editor_note_text", "")),
+        "EDITORIAL_LINK_HTML": editorial_link_html,
 
         # Market Snapshot
         "SNAP_SPX_VALUE":  fmt_price(spx.get("close")),

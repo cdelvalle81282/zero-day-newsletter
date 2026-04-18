@@ -364,6 +364,10 @@
           <label>Note <span class="hint">— 3 paragraphs, your voice</span></label>
           <textarea id="editor_note_text" rows="8" placeholder="Write your editor's note here..." required></textarea>
         </div>
+        <div class="field">
+          <label>Editorial URL <span class="hint">— link to WordPress editorial (optional)</span></label>
+          <input type="url" id="editorial_url" name="editorial_url" placeholder="https://optionpit.com/..." />
+        </div>
       </div>
     </div>
 
@@ -453,6 +457,7 @@
 
       author:           g('author') || 'licia',
       editor_note_text: g('editor_note_text'),
+      editorial_url:    g('editorial_url'),
     };
   }
 
@@ -548,7 +553,7 @@
     const fields = ['signal_text','level_resistance_2_label','level_resistance_2_value',
       'level_resistance_1_label','level_resistance_1_value','level_key_label','level_key_value',
       'level_support_1_label','level_support_1_value','level_support_2_label','level_support_2_value',
-      'levels_note','editor_note_text','signal_color','author'];
+      'levels_note','editor_note_text','editorial_url','signal_color','author'];
     const saved = {};
     fields.forEach(id => {
       const el = document.getElementById(id);
