@@ -358,7 +358,7 @@
 
     <!-- EDITOR'S NOTE -->
     <div class="card">
-      <div class="card-header">Editor's Note — Licia Leslie</div>
+      <div class="card-header" id="editor-note-header">Editor's Note — Licia Leslie</div>
       <div class="card-body">
         <div class="field">
           <label>Note <span class="hint">— 3 paragraphs, your voice</span></label>
@@ -390,16 +390,19 @@
   }).toUpperCase();
 
   // ── Author selector ───────────────────────────────────────────────────────
-  function selectAuthor(key) {
+  const AUTHOR_NAMES = { licia: 'Licia Leslie', mark: 'Mark Sebastian', olivia: 'Olivia Voz' };
+
+  function selectAuthor(key, skipSave) {
     ['licia','mark','olivia'].forEach(k => {
       document.getElementById(`author-${k}`).className = 'signal-btn';
     });
     document.getElementById(`author-${key}`).classList.add('active-yellow');
     document.getElementById('author').value = key;
-    autosave();
+    document.getElementById('editor-note-header').textContent = `Editor's Note — ${AUTHOR_NAMES[key] || key}`;
+    if (!skipSave) autosave();
   }
   // Default selection
-  selectAuthor('licia');
+  selectAuthor('licia', true);
 
   // ── Signal selector ───────────────────────────────────────────────────────
   function selectSignal(color) {

@@ -269,12 +269,12 @@ def build_dashboard_data(target_date):
 
     market = {}
     market_file_date = None
-    if prev_market_path.exists():
-        market = json.loads(prev_market_path.read_text())
-        market_file_date = prev_trading_day
-    elif market_exists:
+    if market_exists:
         market = json.loads(market_path.read_text())
         market_file_date = target_date
+    elif prev_market_path.exists():
+        market = json.loads(prev_market_path.read_text())
+        market_file_date = prev_trading_day
     else:
         market_dir = BASE_DIR / config.MARKET_DATA_DIR
         if market_dir.exists():

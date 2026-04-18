@@ -11,6 +11,9 @@ Two-phase fetch to work around Schwab's options chain expiry at 4 PM ET:
 
   Full fetch (both phases at once, useful for testing):
       python3 scripts/fetch_market_data.py
+
+  Backfill a past date (patches pct_change from candle history):
+      python3 scripts/fetch_market_data.py --mode quotes --date 2026-04-16 --force
 """
 
 import argparse
@@ -46,12 +49,55 @@ def get_client():
 
 # ── Market data fetches ───────────────────────────────────────────────────────
 
-def fetch_quotes(c):
-    """Fetch previous close + % change for SPX, VIX, SPY, QQQ."""
+def _pct_from_candles(c, tickers_to_try, target_date):
+    """
+    Derive daily pct_change from price history candles for target_date.
+    More reliable than the quote API, which resets netPercentChange overnight.
+    Returns float or None.
+    """
+    from datetime import timezone
+    start = target_date - timedelta(days=7)
+    end   = target_date + timedelta(days=1)
+    for ticker in tickers_to_try:
+        try:
+            resp = c.get_price_history_every_day(
+                ticker,
+                start_datetime=datetime.combine(start, datetime.min.time()),
+                end_datetime=datetime.combine(end,   datetime.min.time()),
+            )
+            if resp.status_code != 200:
+                continue
+            candles = resp.json().get("candles", [])
+            # Map each candle to its calendar date
+            dated = {}
+            for bar in candles:
+                bar_date = datetime.fromtimestamp(bar["datetime"] / 1000, tz=timezone.utc).date()
+                dated[bar_date] = bar["close"]
+            if target_date not in dated:
+                continue
+            prev_dates = sorted(d for d in dated if d < target_date)
+            if not prev_dates:
+                continue
+            prev_close  = dated[prev_dates[-1]]
+            today_close = dated[target_date]
+            if prev_close:
+                return round((today_close - prev_close) / prev_close * 100, 2)
+        except Exception:
+            continue
+    return None
+
+
+def fetch_quotes(c, pct_overrides=None):
+    """
+    Fetch closing quotes for SPX, VIX, SPY, QQQ.
+    pct_overrides: dict of short_key -> pct_change to use when the quote API
+    returns 0 (e.g. indices fetched after hours). Derived from candle history.
+    """
     tickers = ["$SPX", "$VIX", "SPY", "QQQ"]
     resp = c.get_quotes(tickers)
     resp.raise_for_status()
     raw = resp.json()
+    pct_overrides = pct_overrides or {}
 
     results = {}
     ticker_map = {
@@ -64,22 +110,31 @@ def fetch_quotes(c):
     for api_key, short_key in ticker_map.items():
         q = raw.get(api_key, {}).get("quote", {})
         close      = q.get("lastPrice") or q.get("closePrice")
-        prev_close = q.get("closePrice") or q.get("lastPrice")
-        open_price = q.get("openPrice")
-        net_change = q.get("netChange", 0)
-        # Use API pct if available, otherwise calculate from close vs open
-        pct_change = q.get("netPercentChange") or q.get("markPercentChange")
-        if not pct_change and prev_close and open_price and open_price != 0:
-            pct_change = round((prev_close - open_price) / open_price * 100, 2)
-        pct_change = pct_change or 0
+        net_change = q.get("netChange") or 0
+
+        # netPercentChange resets to 0 for indices after hours — check None explicitly
+        api_pct = q.get("netPercentChange")
+        if api_pct is None:
+            api_pct = q.get("markPercentChange")
+
+        if api_pct is not None and api_pct != 0:
+            pct_change = api_pct
+        elif net_change and close and (close - net_change) != 0:
+            # Derive from net_change: pct = net / prev_close
+            pct_change = round(net_change / (close - net_change) * 100, 2)
+        else:
+            # Fall back to candle-derived value (reliable for past dates / off-hours)
+            pct_change = pct_overrides.get(short_key) or 0
+
+        # If API pct was 0 but candle override exists, prefer candle
+        if pct_change == 0 and short_key in pct_overrides and pct_overrides[short_key] is not None:
+            pct_change = pct_overrides[short_key]
 
         results[short_key] = {
             "close":      round(close, 2) if close else None,
             "pct_change": round(pct_change, 2),
             "net_change": round(net_change, 2),
-            # color for template: green if up, red if down
             "color": "#22C55E" if pct_change >= 0 else "#CC3333",
-            # VIX is inverted: VIX down = good (green for newsletter)
             "display_color": ("#22C55E" if pct_change <= 0 else "#CC3333")
                               if short_key == "vix"
                               else ("#22C55E" if pct_change >= 0 else "#CC3333"),
@@ -88,9 +143,12 @@ def fetch_quotes(c):
     return results
 
 
-def fetch_50day_ma(c):
-    """Calculate SPX 50-day simple moving average from daily history."""
-    # Try multiple ticker formats — Schwab is inconsistent between endpoints
+def fetch_spx_history(c, target_date=None):
+    """
+    Fetch SPX daily history. Returns (ma_50, pct_change).
+    pct_change is derived from the last two candles — reliable even off-hours.
+    """
+    target_date = target_date or date.today()
     tickers_to_try = ["$SPX.X", "SPX", "$SPX"]
 
     candles = []
@@ -99,11 +157,11 @@ def fetch_50day_ma(c):
             resp = c.get_price_history_every_day(
                 ticker,
                 start_datetime=datetime.combine(
-                    date.today() - timedelta(days=90),
+                    target_date - timedelta(days=90),
                     datetime.min.time()
                 ),
                 end_datetime=datetime.combine(
-                    date.today(),
+                    target_date + timedelta(days=1),
                     datetime.min.time()
                 ),
             )
@@ -116,14 +174,23 @@ def fetch_50day_ma(c):
             continue
 
     if not candles:
-        print("  WARNING: Could not fetch SPX price history. MA will be skipped.")
-        return None
+        print("  WARNING: Could not fetch SPX price history. MA and pct will be skipped.")
+        return None, None
 
     closes = [bar["close"] for bar in candles]
     if len(closes) < 50:
         print(f"  WARNING: Only {len(closes)} days of history, using available data.")
     last_50 = closes[-50:] if len(closes) >= 50 else closes
-    return round(sum(last_50) / len(last_50), 2)
+    ma_50 = round(sum(last_50) / len(last_50), 2)
+
+    pct_change = None
+    if len(closes) >= 2:
+        prev_c  = closes[-2]
+        today_c = closes[-1]
+        if prev_c:
+            pct_change = round((today_c - prev_c) / prev_c * 100, 2)
+
+    return ma_50, pct_change
 
 
 def fetch_0dte_chain(c, debug=False):
@@ -286,37 +353,58 @@ def main():
         "--force", action="store_true",
         help="Run even on non-trading days (for testing)"
     )
+    parser.add_argument(
+        "--date",
+        default=None,
+        help="Target date YYYY-MM-DD (default: today). Use with --force to backfill past dates."
+    )
     args = parser.parse_args()
-    today = str(date.today())
 
-    if not args.force and not is_trading_day():
-        print(f"Today ({today}) is not a trading day. Skipping. Use --force to override.")
+    if args.date:
+        try:
+            target_date = date.fromisoformat(args.date)
+        except ValueError:
+            print(f"ERROR: Invalid --date format. Use YYYY-MM-DD.")
+            sys.exit(1)
+    else:
+        target_date = date.today()
+    today = str(target_date)
+    is_past = target_date < date.today()
+
+    if not args.force and not is_trading_day(target_date):
+        print(f"{today} is not a trading day. Skipping. Use --force to override.")
         sys.exit(0)
 
-    print(f"Fetching market data [{args.mode}] for {today}...")
+    print(f"Fetching market data [{args.mode}] for {today}{'  (backfill)' if is_past else ''}...")
     c = get_client()
 
     # ── Phase 1: Options chain (3:50 PM ET) ───────────────────────────────────
     if args.mode in ("options", "full"):
-        print("  Fetching 0DTE SPX options chain...")
-        try:
-            chain   = fetch_0dte_chain(c)
-            options = fetch_0dte_volume(chain)
-            print(f"  Options volume: {options.get('today_volume', 0):,}")
-            tn = options.get("the_number")
-            if tn:
-                print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
-                      f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
-        except Exception as e:
-            print(f"  WARNING: Could not fetch options chain — {e}")
-            options = {
+        if is_past:
+            print("  Skipping options chain for past dates (0DTE contracts expired).")
+            options = load_existing(today).get("options", {
                 "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
                 "call_volume": None, "put_volume": None, "put_call_ratio": None,
                 "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
-            }
+            })
+        else:
+            print("  Fetching 0DTE SPX options chain...")
+            try:
+                chain   = fetch_0dte_chain(c)
+                options = fetch_0dte_volume(chain)
+                print(f"  Options volume: {options.get('today_volume', 0):,}")
+                tn = options.get("the_number")
+                if tn:
+                    print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
+                          f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
+            except Exception as e:
+                print(f"  WARNING: Could not fetch options chain — {e}")
+                options = {
+                    "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
+                    "call_volume": None, "put_volume": None, "put_call_ratio": None,
+                    "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
+                }
 
-        # Merge with existing file if quotes already there (full mode),
-        # or start fresh (options-only mode)
         existing = load_existing(today)
         payload = {
             "date":       today,
@@ -332,15 +420,22 @@ def main():
 
     # ── Phase 2: Quotes + MA (4:35 PM ET) ────────────────────────────────────
     if args.mode in ("quotes", "full"):
-        print("  Fetching quotes (SPX, VIX, SPY, QQQ)...")
-        quotes = fetch_quotes(c)
+        print("  Fetching SPX history (MA + pct_change from candles)...")
+        ma_50, spx_pct = fetch_spx_history(c, target_date)
 
-        print("  Fetching SPX 50-day MA...")
-        ma_50 = fetch_50day_ma(c)
+        print("  Fetching VIX pct_change from candle history...")
+        vix_pct = _pct_from_candles(c, ["$VIX.X", "VIX", "$VIX"], target_date)
+        if vix_pct is not None:
+            print(f"  VIX pct from candles: {vix_pct:+.2f}%")
+        else:
+            print("  WARNING: Could not derive VIX pct from candle history.")
+
+        pct_overrides = {"spx": spx_pct, "vix": vix_pct}
+
+        print("  Fetching quotes (SPX, VIX, SPY, QQQ)...")
+        quotes = fetch_quotes(c, pct_overrides=pct_overrides)
         quotes["spx"]["ma_50"] = ma_50
 
-        # In full mode, options is already in memory from phase 1 above.
-        # In quotes-only mode, load from disk (options were fetched separately earlier).
         if args.mode == "full":
             existing = {}
         else:
