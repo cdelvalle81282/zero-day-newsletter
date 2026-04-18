@@ -14,7 +14,8 @@ if [ ! -f "$TOKEN_FILE" ]; then
 fi
 
 echo "==> Pushing $TOKEN_FILE to server..."
-scp "$TOKEN_FILE" "$SERVER:$REMOTE_DIR/$TOKEN_FILE"
+scp "$TOKEN_FILE" "$SERVER:/tmp/$TOKEN_FILE"
+ssh "$SERVER" "sudo cp /tmp/$TOKEN_FILE $REMOTE_DIR/$TOKEN_FILE && sudo chown 10001:10001 $REMOTE_DIR/$TOKEN_FILE && rm /tmp/$TOKEN_FILE"
 echo "==> Done. Token pushed to $SERVER:$REMOTE_DIR/$TOKEN_FILE"
 
 # Restart container so it picks up the new token
