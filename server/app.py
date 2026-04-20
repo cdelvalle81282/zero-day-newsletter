@@ -599,13 +599,12 @@ def suggest_subject(target_date):
 
     signal_color = brief.get("signal_color", "yellow")
     signal_label = signal_config(signal_color)["label"]
-    signal_text = (brief.get("signal_text") or "").strip()
-    volume_headline = (brief.get("volume_anomaly_headline") or "").strip()
-    the_number = brief.get("the_number_value", "")
+    signal_text  = (brief.get("signal_text") or "").strip()
+    editor_note  = (brief.get("editor_note_text") or "").strip()
 
     # Sensible defaults in case Claude is unavailable or brief is empty
-    default_subject = f"0DTE Daily — {signal_label} — {target_date}"
-    default_preview = f"{signal_label} signal — {volume_headline}" if volume_headline else f"{signal_label} signal today"
+    default_subject = f"0DTE Daily — {signal_label} signal"
+    default_preview = f"Today's setup and what to watch at the open"
 
     if not config.ANTHROPIC_API_KEY:
         return jsonify({"subject": default_subject, "preview_line": default_preview})
@@ -614,15 +613,11 @@ def suggest_subject(target_date):
         import anthropic as _anthropic
         client = _anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
-        prompt_parts = [
-            f"Signal: {signal_label}",
-        ]
+        prompt_parts = [f"Signal: {signal_label}"]
         if signal_text:
-            prompt_parts.append(f"Signal detail: {signal_text}")
-        if volume_headline:
-            prompt_parts.append(f"Volume headline: {volume_headline}")
-        if the_number not in (None, ""):
-            prompt_parts.append(f"The Number: {the_number}")
+            prompt_parts.append(f"Signal context: {signal_text}")
+        if editor_note:
+            prompt_parts.append(f"Editor's note: {editor_note}")
 
         brief_summary = "\n".join(prompt_parts)
 
@@ -632,16 +627,18 @@ def suggest_subject(target_date):
             system=(
                 "You write compelling email subject lines and preview text for a "
                 "daily options trading newsletter called '0DTE Daily'. "
-                "The audience is active options traders. Keep subjects under 60 characters. "
-                "Keep preview lines under 100 characters. Be specific, intriguing, and direct. "
-                "Do not use hype words like 'explosive' or 'massive'."
+                "The audience is active options traders. "
+                "Keep subjects under 60 characters. Keep preview lines under 100 characters. "
+                "Base both on the editor's note and the signal. "
+                "Be specific, intriguing, and direct — create a sense of urgency or insight. "
+                "Never use % or $ signs. "
+                "Do not use hype words like 'explosive', 'massive', or 'huge'."
             ),
             messages=[{
                 "role": "user",
                 "content": (
                     f"Write a subject line and preview line for today's newsletter.\n\n"
                     f"{brief_summary}\n\n"
-                    f"Date: {target_date}\n\n"
                     "Respond with exactly two lines in this format:\n"
                     "Subject: <subject line>\n"
                     "Preview: <preview line>"
