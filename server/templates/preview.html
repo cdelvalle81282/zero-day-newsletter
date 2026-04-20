@@ -184,6 +184,41 @@
   <a href="/0dte-daily/" class="btn btn-edit">Edit Brief</a>
 </div>
 
+<!-- TEST SEND MODAL -->
+<div id="testSendModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center;">
+  <div style="background:#0F1F35; border:1px solid #1E3A5F; border-radius:6px; width:520px; max-width:95vw; padding:28px;">
+    <h2 style="font-family:Tahoma,sans-serif; font-size:16px; color:#FFFFFE; margin-bottom:6px;">Send Test Email</h2>
+    <p style="font-family:Tahoma,sans-serif; font-size:12px; color:#4B6A8A; margin-bottom:20px;">
+      Subject and preview are pre-filled with AI suggestions. Edit as needed before sending.
+    </p>
+
+    <div style="margin-bottom:14px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:6px;">To</label>
+      <input id="testSendEmail" type="email" placeholder="recipient@example.com"
+        style="width:100%; padding:10px 12px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; color:#FFFFFE; font-family:Tahoma,sans-serif; font-size:13px; outline:none;">
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:6px;">Subject</label>
+      <input id="testSendSubject" type="text" placeholder="Loading suggestion…"
+        style="width:100%; padding:10px 12px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; color:#FFFFFE; font-family:Tahoma,sans-serif; font-size:13px; outline:none;">
+      <div id="testSendSubjectHint" style="font-size:11px; color:#4B6A8A; margin-top:4px; min-height:14px;"></div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:6px;">Preview Line</label>
+      <input id="testSendPreview" type="text" placeholder="Loading suggestion…"
+        style="width:100%; padding:10px 12px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; color:#FFFFFE; font-family:Tahoma,sans-serif; font-size:13px; outline:none;">
+      <div id="testSendPreviewHint" style="font-size:11px; color:#4B6A8A; margin-top:4px; min-height:14px;"></div>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="closeTestSendModal()" style="padding:10px 20px; background:#1E3A5F; color:#FFFFFE; border:none; border-radius:3px; font-family:Tahoma,sans-serif; font-size:13px; cursor:pointer;">Cancel</button>
+      <button onclick="confirmTestSend()" id="btnTestSendConfirm" style="padding:10px 24px; background:#0E7FAD; color:#FFFFFE; border:none; border-radius:3px; font-family:Tahoma,sans-serif; font-size:13px; font-weight:bold; cursor:pointer;">Send Test</button>
+    </div>
+  </div>
+</div>
+
 <!-- SEGMENT PICKER MODAL -->
 <div id="segmentModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center;">
   <div style="background:#0F1F35; border:1px solid #1E3A5F; border-radius:6px; width:480px; max-width:95vw; padding:28px;">
@@ -312,16 +347,68 @@
   }
 
   function sendTest() {
-    const email = prompt('Send test to which email address?', 'cdelvalle@optionpit.com');
-    if (!email) return;
+    // Reset fields to loading state
+    document.getElementById('testSendEmail').value = 'cdelvalle@optionpit.com';
+    document.getElementById('testSendSubject').value = '';
+    document.getElementById('testSendSubject').placeholder = 'Loading AI suggestion…';
+    document.getElementById('testSendPreview').value = '';
+    document.getElementById('testSendPreview').placeholder = 'Loading AI suggestion…';
+    document.getElementById('testSendSubjectHint').textContent = '';
+    document.getElementById('testSendPreviewHint').textContent = '';
+    document.getElementById('btnTestSendConfirm').disabled = false;
+
+    // Open modal
+    document.getElementById('testSendModal').style.display = 'flex';
+
+    // Fetch AI suggestions
+    fetch('/0dte-daily/suggest-subject/{{ target_date }}')
+      .then(r => r.json())
+      .then(data => {
+        const subjectField = document.getElementById('testSendSubject');
+        const previewField = document.getElementById('testSendPreview');
+        subjectField.placeholder = 'Subject line';
+        previewField.placeholder = 'Preview line';
+        if (data.subject) {
+          subjectField.value = data.subject;
+          document.getElementById('testSendSubjectHint').textContent = 'AI suggestion — edit freely';
+        }
+        if (data.preview_line) {
+          previewField.value = data.preview_line;
+          document.getElementById('testSendPreviewHint').textContent = 'AI suggestion — edit freely';
+        }
+      })
+      .catch(() => {
+        document.getElementById('testSendSubject').placeholder = 'Enter subject line';
+        document.getElementById('testSendPreview').placeholder = 'Enter preview line';
+        document.getElementById('testSendSubjectHint').textContent = 'Could not load suggestion';
+        document.getElementById('testSendPreviewHint').textContent = 'Could not load suggestion';
+      });
+  }
+
+  function closeTestSendModal() {
+    document.getElementById('testSendModal').style.display = 'none';
+  }
+
+  function confirmTestSend() {
+    const email = document.getElementById('testSendEmail').value.trim();
+    const subject = document.getElementById('testSendSubject').value.trim();
+    const preview_line = document.getElementById('testSendPreview').value.trim();
+
+    if (!email) {
+      showToast('Please enter a recipient email address.', 'err');
+      return;
+    }
+
+    document.getElementById('btnTestSendConfirm').disabled = true;
     document.getElementById('btnTest').disabled = true;
     document.getElementById('spinTest').classList.add('show');
-    showToast('Sending test...', 'info');
+    closeTestSendModal();
+    showToast('Sending test…', 'info');
 
     fetch('/0dte-daily/send-test/{{ target_date }}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, subject, preview_line }),
     })
     .then(r => r.json())
     .then(data => {

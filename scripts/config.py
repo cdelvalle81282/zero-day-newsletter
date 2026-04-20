@@ -76,6 +76,9 @@ OPTIPUB_SENDER_ID = int(_env("OPTIPUB_SENDER_ID", "46"))
 # 814 = F0DTE, 11 = Staff List
 OPTIPUB_DEFAULT_SEGMENTS = _env("OPTIPUB_DEFAULT_SEGMENTS", "814,11")
 
+# ── Anthropic ─────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY", "")
+
 # ── Server ────────────────────────────────────────────────────────────────────
 ZERODAY_PASSWORD = _env("ZERODAY_PASSWORD", "")   # basic auth for the form
 SERVER_BASE_URL  = _env("SERVER_BASE_URL",  "https://optionpit-api.duckdns.org")

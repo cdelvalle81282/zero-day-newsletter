@@ -589,6 +589,86 @@ def approve(target_date):
     return jsonify({"ok": True, "msg_id": msg_id, "title": title})
 
 
+@app.route("/0dte-daily/suggest-subject/<target_date>", methods=["GET"])
+@require_auth
+def suggest_subject(target_date):
+    validate_date(target_date)
+
+    brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
+    brief = json.loads(brief_path.read_text()) if brief_path.exists() else {}
+
+    signal_color = brief.get("signal_color", "yellow")
+    signal_label = signal_config(signal_color)["label"]
+    signal_text = (brief.get("signal_text") or "").strip()
+    volume_headline = (brief.get("volume_anomaly_headline") or "").strip()
+    the_number = brief.get("the_number_value", "")
+
+    # Sensible defaults in case Claude is unavailable or brief is empty
+    default_subject = f"0DTE Daily — {signal_label} — {target_date}"
+    default_preview = f"{signal_label} signal — {volume_headline}" if volume_headline else f"{signal_label} signal today"
+
+    if not config.ANTHROPIC_API_KEY:
+        return jsonify({"subject": default_subject, "preview_line": default_preview})
+
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+        prompt_parts = [
+            f"Signal: {signal_label}",
+        ]
+        if signal_text:
+            prompt_parts.append(f"Signal detail: {signal_text}")
+        if volume_headline:
+            prompt_parts.append(f"Volume headline: {volume_headline}")
+        if the_number not in (None, ""):
+            prompt_parts.append(f"The Number: {the_number}")
+
+        brief_summary = "\n".join(prompt_parts)
+
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=256,
+            system=(
+                "You write compelling email subject lines and preview text for a "
+                "daily options trading newsletter called '0DTE Daily'. "
+                "The audience is active options traders. Keep subjects under 60 characters. "
+                "Keep preview lines under 100 characters. Be specific, intriguing, and direct. "
+                "Do not use hype words like 'explosive' or 'massive'."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Write a subject line and preview line for today's newsletter.\n\n"
+                    f"{brief_summary}\n\n"
+                    f"Date: {target_date}\n\n"
+                    "Respond with exactly two lines in this format:\n"
+                    "Subject: <subject line>\n"
+                    "Preview: <preview line>"
+                ),
+            }],
+        )
+
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        subject = default_subject
+        preview = default_preview
+        for line in text.splitlines():
+            if line.startswith("Subject:"):
+                val = line[len("Subject:"):].strip()
+                if val:
+                    subject = val
+            elif line.startswith("Preview:"):
+                val = line[len("Preview:"):].strip()
+                if val:
+                    preview = val
+
+        return jsonify({"subject": subject, "preview_line": preview})
+
+    except Exception:
+        app.logger.exception("suggest-subject: Claude call failed, returning defaults")
+        return jsonify({"subject": default_subject, "preview_line": default_preview})
+
+
 @app.route("/0dte-daily/send-test/<target_date>", methods=["POST"])
 @require_auth
 def send_test(target_date):
@@ -613,35 +693,46 @@ def send_test(target_date):
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         return jsonify({"ok": False, "error": "Invalid email format."}), 400
 
+    # Accept caller-supplied subject and preview_line; fall back to signal-based defaults
+    brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
+    brief = json.loads(brief_path.read_text()) if brief_path.exists() else {}
+    signal_label = signal_config(brief.get("signal_color", "yellow"))["label"]
+
+    raw_subject = data.get("subject", "").strip()[:200]
+    raw_preview = data.get("preview_line", "").strip()[:200]
+    # Strip CR/LF to prevent header injection
+    raw_subject = raw_subject.replace("\r", "").replace("\n", "")
+    raw_preview = raw_preview.replace("\r", "").replace("\n", "")
+
+    subject = raw_subject or f"0DTE Daily — {signal_label} — {target_date}"
+    preview_line = raw_preview or f"{signal_label} — {target_date}"
+
     try:
         html       = draft_path.read_text(encoding="utf-8")
-        brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
-        brief      = json.loads(brief_path.read_text()) if brief_path.exists() else {}
-
-        signal_label = signal_config(brief.get("signal_color", "yellow"))["label"]
-        subject = f"[TEST] 0DTE Daily — {signal_label} — {target_date}"
 
         payload = json.dumps({
-            "email":          email,
-            "subject":        subject,
-            "content":        html,
-            "sender_id":      config.OPTIPUB_SENDER_ID,
-            "publication_id": config.ZERO_DAY_PUBLICATION_ID,
-            "preview_line":   f"Test send — {signal_label} — {target_date}",
+            "email":        email,
+            "subject":      subject,
+            "html":         html,
+            "sender_id":    config.OPTIPUB_SENDER_ID,
+            "reply_id":     config.OPTIPUB_SENDER_ID,
+            "preview_line": preview_line,
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            f"{config.OPTIPUB_API_BASE}/messages/transactional",
+            f"{config.OPTIPUB_API_BASE}/messages/transactionals",
             data=payload,
             headers={
                 "Content-Type": "application/json",
+                "Accept":        "application/json",
                 "Authorization": f"Bearer {config.OPTIPUB_API_KEY}",
             },
             method="POST",
         )
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
-                json.loads(resp.read())
+                body = resp.read().decode("utf-8", errors="replace")
+                app.logger.warning(f"send-test HTTP {resp.status}: {body[:300]}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")[:500]
             app.logger.error(f"send-test HTTP {e.code}: {body}")
