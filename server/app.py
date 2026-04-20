@@ -631,7 +631,7 @@ def suggest_subject(target_date):
                 "Keep subjects under 60 characters. Keep preview lines under 100 characters. "
                 "Base both on the editor's note and the signal. "
                 "Be specific, intriguing, and direct — create a sense of urgency or insight. "
-                "Never use % or $ signs. "
+                "Never use %, $, or em dashes (—). Use plain hyphens if you need a dash. "
                 "Do not use hype words like 'explosive', 'massive', or 'huge'."
             ),
             messages=[{
@@ -646,16 +646,19 @@ def suggest_subject(target_date):
             }],
         )
 
+        def sanitize(s):
+            return s.replace("$", "").replace("%", "").replace("—", "-").replace("–", "-").strip()
+
         text = next((b.text for b in response.content if b.type == "text"), "")
         subject = default_subject
         preview = default_preview
         for line in text.splitlines():
             if line.startswith("Subject:"):
-                val = line[len("Subject:"):].strip()
+                val = sanitize(line[len("Subject:"):])
                 if val:
                     subject = val
             elif line.startswith("Preview:"):
-                val = line[len("Preview:"):].strip()
+                val = sanitize(line[len("Preview:"):])
                 if val:
                     preview = val
 
