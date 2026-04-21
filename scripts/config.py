@@ -10,13 +10,10 @@ import os
 def _env(key, default):
     return os.environ.get(key, default)
 
-# ── Schwab API credentials ────────────────────────────────────────────────────
-SCHWAB_APP_KEY      = _env("SCHWAB_APP_KEY",    "YOUR_APP_KEY")
-SCHWAB_APP_SECRET   = _env("SCHWAB_APP_SECRET", "YOUR_APP_SECRET")
-SCHWAB_CALLBACK_URL = _env("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182")
+# ── Polygon.io ────────────────────────────────────────────────────────────────
+POLYGON_API_KEY = _env("POLYGON_API_KEY", "")
 
 # ── File paths ────────────────────────────────────────────────────────────────
-TOKEN_FILE      = _env("TOKEN_FILE",      "schwab_token.json")
 MARKET_DATA_DIR = _env("MARKET_DATA_DIR", "market_data")
 DAILY_BRIEF_DIR = _env("DAILY_BRIEF_DIR", "daily_briefs")
 
@@ -27,7 +24,6 @@ ZERO_DAY_PUBLICATION_ID = int(_env("ZERO_DAY_PUBLICATION_ID", "103"))
 
 # ── Auth health reminders ─────────────────────────────────────────────────────
 REMINDER_DAYS_BEFORE_EXPIRY = int(_env("REMINDER_DAYS_BEFORE_EXPIRY", "3"))
-SCHWAB_REFRESH_TOKEN_DAYS   = 7
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 NOTIFY_METHOD        = _env("NOTIFY_METHOD",    "slack")

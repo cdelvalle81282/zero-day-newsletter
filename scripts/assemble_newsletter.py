@@ -283,7 +283,7 @@ def build_tokens(brief, market, target_date):
         "LEVEL_R2_VALUE":  fmt_price(brief.get("level_resistance_2_value")),
         "LEVEL_R1_LABEL":  html_escape(brief.get("level_resistance_1_label", "Resistance 1")),
         "LEVEL_R1_VALUE":  fmt_price(brief.get("level_resistance_1_value")),
-        "LEVEL_KEY_LABEL": html_escape(brief.get("level_key_label", "Key Level")),
+        "LEVEL_KEY_LABEL": html_escape(brief.get("level_key_label", "Premarket Price")),
         "LEVEL_KEY_VALUE": fmt_price(brief.get("level_key_value")),
         "LEVEL_S1_LABEL":  html_escape(brief.get("level_support_1_label", "Support 1")),
         "LEVEL_S1_VALUE":  fmt_price(brief.get("level_support_1_value")),

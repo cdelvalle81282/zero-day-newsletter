@@ -509,29 +509,14 @@
     <!-- Right column: Token health + auto-generated sections -->
     <div style="display:flex; flex-direction:column; gap:20px;">
 
-      <!-- Token Health -->
+      <!-- API Key Health -->
       <div class="card">
-        <div class="card-header">Schwab Token Health</div>
+        <div class="card-header">Polygon.io API</div>
         <div class="card-body">
           {% if token.exists %}
-            {% set bar_color = '#22C55E' if token.days_left > 3 else ('#FB923C' if token.days_left > 1 else '#CC3333') %}
-            {% set bar_pct = (token.days_left / 7 * 100)|int %}
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span style="font-size:13px; color:{{ bar_color }}; font-weight:bold;">
-                {{ token.days_left }} day{{ 's' if token.days_left != 1 }} remaining
-              </span>
-              <span style="font-size:11px; color:#4B6A8A;">Expires {{ token.expires }}</span>
-            </div>
-            <div class="token-bar-bg">
-              <div class="token-bar-fill" style="width:{{ bar_pct }}%; background:{{ bar_color }};"></div>
-            </div>
-            {% if token.days_left <= 3 %}
-            <div style="font-size:11px; color:#FB923C; margin-top:6px;">
-              ⚠ Run <code style="background:#0A1628; padding:1px 5px; border-radius:2px;">python3 scripts/reauth.py</code> locally then <code style="background:#0A1628; padding:1px 5px; border-radius:2px;">bash push_token.sh</code>
-            </div>
-            {% endif %}
+            <div style="color:#22C55E; font-size:13px; font-weight:bold;">&#10003; API key configured</div>
           {% else %}
-            <div style="color:#CC3333; font-size:13px;">Token file not found. Run reauth.py locally then push_token.sh.</div>
+            <div style="color:#CC3333; font-size:13px;">API key not set. Add POLYGON_API_KEY to .env and restart.</div>
           {% endif %}
         </div>
       </div>

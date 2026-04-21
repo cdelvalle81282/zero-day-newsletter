@@ -167,6 +167,23 @@ def add_security_headers(response):
     return response
 
 
+# ── Subprocess helpers ────────────────────────────────────────────────────────
+
+def _subprocess_env():
+    """Return an env dict that suppresses known benign deprecation warnings."""
+    env = os.environ.copy()
+    existing = env.get("PYTHONWARNINGS", "")
+    suppress = "ignore::DeprecationWarning:authlib"
+    env["PYTHONWARNINGS"] = f"{existing},{suppress}" if existing else suppress
+    return env
+
+
+def _subprocess_error(result):
+    """Combine stderr + stdout into a single error string for reporting."""
+    parts = [result.stderr.strip(), result.stdout.strip()]
+    return "\n".join(p for p in parts if p) or "unknown error"
+
+
 # ── Assembly helper ───────────────────────────────────────────────────────────
 
 def run_assembly(target_date):
@@ -304,7 +321,7 @@ def build_dashboard_data(target_date):
         "r2_value":  f"{brief.get('level_resistance_2_value', ''):,.2f}" if brief.get("level_resistance_2_value") else "—",
         "r1_label":  brief.get("level_resistance_1_label", "Resistance 1"),
         "r1_value":  f"{brief.get('level_resistance_1_value', ''):,.2f}" if brief.get("level_resistance_1_value") else "—",
-        "key_label": brief.get("level_key_label", "Key Level"),
+        "key_label": brief.get("level_key_label", "Premarket Price"),
         "key_value": f"{brief.get('level_key_value', ''):,.2f}" if brief.get("level_key_value") else "—",
         "s1_label":  brief.get("level_support_1_label", "Support 1"),
         "s1_value":  f"{brief.get('level_support_1_value', ''):,.2f}" if brief.get("level_support_1_value") else "—",
@@ -341,31 +358,13 @@ def build_dashboard_data(target_date):
             f"${int(tn['gain_dollars']):,} per contract."
         )
 
-    token_path = Path(config.TOKEN_FILE)
-    token_data = {}
-    if token_path.exists():
-        try:
-            token_data = json.loads(token_path.read_text())
-        except Exception:
-            pass
-    creation = token_data.get("creation_timestamp")
-    if creation:
-        from datetime import timezone
-        expiry_ts = creation + (config.SCHWAB_REFRESH_TOKEN_DAYS * 86400)
-        expiry_dt = datetime.fromtimestamp(expiry_ts, tz=timezone.utc)
-        days_left = max(0, (expiry_dt - datetime.now(timezone.utc)).days)
-        token_info = {
-            "exists":    True,
-            "days_left": days_left,
-            "expires":   expiry_dt.strftime("%b %-d") if os.name != "nt" else expiry_dt.strftime("%b {d}").replace("{d}", str(expiry_dt.day)),
-        }
-    else:
-        token_info = {"exists": token_path.exists(), "days_left": 0, "expires": "unknown"}
+    token_info = {"exists": bool(config.POLYGON_API_KEY)}
 
     today_data = {
         "date":          target_date,
-        "brief":         brief_exists,
-        "market_data":   market_exists,
+        "brief":                brief_exists,
+        "market_data":          market_exists,
+        "market_data_pending":  brief_exists and not market_exists,
         "draft":         draft_exists,
         "approved":      approved_exists,
         "signal_color":  signal_color,
@@ -430,6 +429,22 @@ def dashboard():
 @require_auth
 def form():
     return send_from_directory(str(BASE_DIR), "daily_brief_form.html")
+
+
+@app.route("/0dte-daily/premarket")
+@require_auth
+def premarket():
+    """Return today's pre-market SPX price fetched at 6 AM ET."""
+    today = str(date.today())
+    path = BASE_DIR / config.MARKET_DATA_DIR / f"premarket_{today}.json"
+    if not path.exists():
+        return jsonify({"ok": False, "error": "No premarket data yet for today"}), 404
+    try:
+        data = json.loads(path.read_text())
+        return jsonify({"ok": True, **data})
+    except Exception:
+        return jsonify({"ok": False, "error": "Could not read premarket file"}), 500
+
 
 
 @app.route("/0dte-daily/submit", methods=["POST"])
@@ -761,20 +776,21 @@ def sync_market_data():
     try:
         result = subprocess.run(
             ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"),
-             "--mode", mode, "--date", et_date],
+             "--mode", mode, "--date", et_date, "--force"],
             cwd=str(BASE_DIR),
             capture_output=True, text=True,
-            timeout=60
+            timeout=60,
+            env=_subprocess_env()
         )
     except subprocess.TimeoutExpired:
         notify_fetch_failed(f"manual sync ({mode})", "Timed out after 60s")
         return jsonify({"ok": False, "error": "Fetch timed out"}), 500
 
     if result.returncode != 0:
-        error = result.stderr or result.stdout or "unknown error"
+        error = _subprocess_error(result)
         notify_fetch_failed(f"manual sync ({mode})", error)
         app.logger.error(f"Manual sync ({mode}) failed:\n{error}")
-        return jsonify({"ok": False, "error": error[:500]}), 500
+        return jsonify({"ok": False, "error": error[:800]}), 500
 
     app.logger.info(f"Manual sync ({mode}) succeeded")
     return jsonify({"ok": True, "output": result.stdout})
@@ -801,7 +817,7 @@ def status():
         "market_data": (BASE_DIR / config.MARKET_DATA_DIR / f"{today}.json").exists(),
         "draft":       (DRAFTS_DIR / f"{today}.html").exists(),
         "approved":    (DRAFTS_DIR / f"{today}.approved").exists(),
-        "token_file":  Path(config.TOKEN_FILE).exists(),
+        "polygon_key": bool(config.POLYGON_API_KEY),
     })
 
 
@@ -863,10 +879,11 @@ def job_fetch_options():
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "options"],
         cwd=str(BASE_DIR),
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        timeout=120, env=_subprocess_env()
     )
     if result.returncode != 0:
-        error = result.stderr or result.stdout or "unknown error"
+        error = _subprocess_error(result)
         app.logger.error(f"options fetch failed:\n{error}")
         notify_fetch_failed("options (3:50 PM ET)", error)
     else:
@@ -881,10 +898,11 @@ def job_fetch_quotes():
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "fetch_market_data.py"), "--mode", "quotes"],
         cwd=str(BASE_DIR),
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        timeout=60, env=_subprocess_env()
     )
     if result.returncode != 0:
-        error = result.stderr or result.stdout or "unknown error"
+        error = _subprocess_error(result)
         app.logger.error(f"quotes fetch failed:\n{error}")
         notify_fetch_failed("quotes (4:35 PM ET)", error)
         return
@@ -914,15 +932,38 @@ def job_auth_health():
     result = subprocess.run(
         ["python3", str(SCRIPTS_DIR / "auth_health.py")],
         cwd=str(BASE_DIR),
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        timeout=30, env=_subprocess_env()
     )
     app.logger.info(f"auth_health output:\n{result.stdout}")
     if result.returncode != 0:
-        app.logger.warning(f"auth_health warning:\n{result.stderr}")
+        app.logger.warning(f"auth_health warning:\n{_subprocess_error(result)}")
+
+
+def job_fetch_premarket():
+    if not is_trading_day():
+        app.logger.info("Skipping premarket fetch — not a trading day.")
+        return
+    app.logger.info("Scheduled: fetch SPX pre-market price (6:00 AM ET)...")
+    result = subprocess.run(
+        ["python3", str(SCRIPTS_DIR / "fetch_premarket.py")],
+        cwd=str(BASE_DIR),
+        capture_output=True, text=True,
+        timeout=30, env=_subprocess_env()
+    )
+    if result.returncode != 0:
+        error = _subprocess_error(result)
+        app.logger.error(f"premarket fetch failed:\n{error}")
+        notify_fetch_failed("premarket (6:00 AM ET)", error)
+    else:
+        app.logger.info(f"premarket fetch done:\n{result.stdout}")
 
 
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone="America/New_York")
+    scheduler.add_job(job_fetch_premarket, "cron",
+                      day_of_week="mon-fri", hour=6, minute=0,
+                      id="fetch_premarket")
     scheduler.add_job(job_fetch_options, "cron",
                       day_of_week="mon-fri", hour=15, minute=50,
                       id="fetch_options")
@@ -936,7 +977,7 @@ def start_scheduler():
                       day_of_week="mon-fri", hour=9, minute=15,
                       id="morning_check")
     scheduler.start()
-    app.logger.info("Scheduler started (options 3:50, quotes 4:35, auth 9:00, morning_check 9:15 — all ET)")
+    app.logger.info("Scheduler started (premarket 6:00, options 3:50, quotes 4:35, auth 9:00, morning_check 9:15 — all ET)")
     return scheduler
 
 

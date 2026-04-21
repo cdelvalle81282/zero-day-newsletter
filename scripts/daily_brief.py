@@ -100,10 +100,10 @@ def collect(target_date, existing=None):
     r1_value = ask_float("Resistance 1 value",
                          default=ex.get("level_resistance_1_value"))
 
-    key_label = ask("Key level label",
+    key_label = ask("Premarket Price label",
                     default=ex.get("level_key_label")
-                            or prev.get("level_key_label", "Key Level (Pitchfork)"))
-    key_value = ask_float("Key level value",
+                            or prev.get("level_key_label", "Premarket Price"))
+    key_value = ask_float("Premarket Price value",
                           default=ex.get("level_key_value"))
 
     s1_label = ask("Support 1 label",

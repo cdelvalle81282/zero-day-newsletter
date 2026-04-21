@@ -1,7 +1,7 @@
 """
-Zero Day Newsletter — Market Data Fetcher
+Zero Day Newsletter — Market Data Fetcher (Polygon.io)
 
-Two-phase fetch to work around Schwab's options chain expiry at 4 PM ET:
+Two-phase fetch:
 
   Phase 1 — options (run at 3:50 PM ET, while 0DTE contracts still active):
       python3 scripts/fetch_market_data.py --mode options
@@ -12,7 +12,7 @@ Two-phase fetch to work around Schwab's options chain expiry at 4 PM ET:
   Full fetch (both phases at once, useful for testing):
       python3 scripts/fetch_market_data.py
 
-  Backfill a past date (patches pct_change from candle history):
+  Backfill a past date:
       python3 scripts/fetch_market_data.py --mode quotes --date 2026-04-16 --force
 """
 
@@ -21,254 +21,275 @@ import json
 import os
 import sys
 from datetime import date, datetime, timedelta
+from urllib.parse import urlparse, parse_qs
 
-from schwab import auth
+import requests
 
 import config
 from trading_calendar import is_trading_day
 
-# ── Setup ─────────────────────────────────────────────────────────────────────
+BASE_URL = "https://api.polygon.io"
 
-def get_client():
-    """Load existing token or abort with a helpful message."""
-    if not os.path.exists(config.TOKEN_FILE):
-        print("ERROR: No token file found. Run reauth.py first.")
-        sys.exit(1)
-    try:
-        c = auth.client_from_token_file(
-            token_path=config.TOKEN_FILE,
-            api_key=config.SCHWAB_APP_KEY,
-            app_secret=config.SCHWAB_APP_SECRET,
-        )
-        return c
-    except Exception as e:
-        print(f"ERROR: Could not load token — {e}")
-        print("The refresh token may have expired. Run reauth.py to fix this.")
-        sys.exit(1)
-
-
-# ── Market data fetches ───────────────────────────────────────────────────────
-
-def _pct_from_candles(c, tickers_to_try, target_date):
-    """
-    Derive daily pct_change from price history candles for target_date.
-    More reliable than the quote API, which resets netPercentChange overnight.
-    Returns float or None.
-    """
-    from datetime import timezone
-    start = target_date - timedelta(days=7)
-    end   = target_date + timedelta(days=1)
-    for ticker in tickers_to_try:
-        try:
-            resp = c.get_price_history_every_day(
-                ticker,
-                start_datetime=datetime.combine(start, datetime.min.time()),
-                end_datetime=datetime.combine(end,   datetime.min.time()),
-            )
-            if resp.status_code != 200:
-                continue
-            candles = resp.json().get("candles", [])
-            # Map each candle to its calendar date
-            dated = {}
-            for bar in candles:
-                bar_date = datetime.fromtimestamp(bar["datetime"] / 1000, tz=timezone.utc).date()
-                dated[bar_date] = bar["close"]
-            if target_date not in dated:
-                continue
-            prev_dates = sorted(d for d in dated if d < target_date)
-            if not prev_dates:
-                continue
-            prev_close  = dated[prev_dates[-1]]
-            today_close = dated[target_date]
-            if prev_close:
-                return round((today_close - prev_close) / prev_close * 100, 2)
-        except Exception:
-            continue
-    return None
-
-
-def fetch_quotes(c, pct_overrides=None):
-    """
-    Fetch closing quotes for SPX, VIX, SPY, QQQ.
-    pct_overrides: dict of short_key -> pct_change to use when the quote API
-    returns 0 (e.g. indices fetched after hours). Derived from candle history.
-    """
-    tickers = ["$SPX", "$VIX", "SPY", "QQQ"]
-    resp = c.get_quotes(tickers)
-    resp.raise_for_status()
-    raw = resp.json()
-    pct_overrides = pct_overrides or {}
-
-    results = {}
-    ticker_map = {
-        "$SPX": "spx",
-        "$VIX": "vix",
-        "SPY":  "spy",
-        "QQQ":  "qqq",
+def _empty_options():
+    return {
+        "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
+        "call_volume": None, "put_volume": None, "put_call_ratio": None,
+        "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
     }
 
-    for api_key, short_key in ticker_map.items():
-        q = raw.get(api_key, {}).get("quote", {})
-        close      = q.get("lastPrice") or q.get("closePrice")
-        net_change = q.get("netChange") or 0
 
-        # netPercentChange resets to 0 for indices after hours — check None explicitly
-        api_pct = q.get("netPercentChange")
-        if api_pct is None:
-            api_pct = q.get("markPercentChange")
+# ── HTTP helper ───────────────────────────────────────────────────────────────
 
-        if api_pct is not None and api_pct != 0:
-            pct_change = api_pct
-        elif net_change and close and (close - net_change) != 0:
-            # Derive from net_change: pct = net / prev_close
-            pct_change = round(net_change / (close - net_change) * 100, 2)
+def _get(path, params=None, timeout=30):
+    p = dict(params or {})
+    p["apiKey"] = config.POLYGON_API_KEY
+    resp = requests.get(f"{BASE_URL}{path}", params=p, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _get_or_none(path, params=None, timeout=30):
+    """Like _get but returns None on 403 (plan restriction) instead of raising."""
+    try:
+        return _get(path, params, timeout)
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 403:
+            return None
+        raise
+
+
+# ── Quotes ────────────────────────────────────────────────────────────────────
+
+def fetch_quotes(target_date=None):
+    """
+    Fetch closing quotes for SPX, VIX, SPY, QQQ.
+    Live (today): snapshot for SPX/VIX, aggs for SPY/QQQ.
+    Past date: aggs for all four (snapshot only has current session data).
+    """
+    target_date = target_date or date.today()
+    results     = {}
+
+    results.update(_fetch_stock_aggs(["SPY", "QQQ"], target_date))
+
+    if target_date < date.today():
+        results.update(_fetch_index_aggs(target_date))
+    else:
+        results.update(_fetch_index_snapshots())
+
+    # Compute display colors
+    for key, d in results.items():
+        pct = d.get("pct_change", 0) or 0
+        if key == "vix":
+            d["color"]         = "#22C55E" if pct >= 0 else "#CC3333"
+            d["display_color"] = "#22C55E" if pct <= 0 else "#CC3333"
         else:
-            # Fall back to candle-derived value (reliable for past dates / off-hours)
-            pct_change = pct_overrides.get(short_key) or 0
-
-        # If API pct was 0 but candle override exists, prefer candle
-        if pct_change == 0 and short_key in pct_overrides and pct_overrides[short_key] is not None:
-            pct_change = pct_overrides[short_key]
-
-        results[short_key] = {
-            "close":      round(close, 2) if close else None,
-            "pct_change": round(pct_change, 2),
-            "net_change": round(net_change, 2),
-            "color": "#22C55E" if pct_change >= 0 else "#CC3333",
-            "display_color": ("#22C55E" if pct_change <= 0 else "#CC3333")
-                              if short_key == "vix"
-                              else ("#22C55E" if pct_change >= 0 else "#CC3333"),
-        }
+            d["color"]         = "#22C55E" if pct >= 0 else "#CC3333"
+            d["display_color"] = "#22C55E" if pct >= 0 else "#CC3333"
 
     return results
 
 
-def fetch_spx_history(c, target_date=None):
+def _fetch_stock_aggs(tickers, target_date):
+    """Fetch OHLC for tickers on target_date via daily aggs range endpoint."""
+    out       = {}
+    date_str  = str(target_date)
+    prev_str  = str(target_date - timedelta(days=7))
+    for ticker in tickers:
+        try:
+            data = _get(f"/v2/aggs/ticker/{ticker}/range/1/day/{prev_str}/{date_str}",
+                        {"adjusted": "true", "sort": "asc", "limit": 10})
+            bars = data.get("results", [])
+            if not bars:
+                continue
+            bar     = bars[-1]
+            prev_b  = bars[-2] if len(bars) >= 2 else None
+            close   = bar.get("c")
+            prev_c  = prev_b.get("c") if prev_b else bar.get("o")
+            pct     = round((close - prev_c) / prev_c * 100, 2) if close and prev_c else 0
+            net     = round(close - prev_c, 2) if close and prev_c else 0
+            key     = ticker.lower()
+            out[key] = {"close": round(close, 2), "pct_change": pct, "net_change": net}
+        except Exception as e:
+            print(f"  WARNING: Could not fetch {ticker} aggs — {e}")
+    return out
+
+
+def _fetch_index_snapshots():
+    """
+    Fetch SPX and VIX from Polygon v3 snapshot.
+    Returns empty dict if plan doesn't include index data (NOT_ENTITLED).
+    """
+    data = _get_or_none("/v3/snapshot", {"ticker.any_of": "I:SPX,I:VIX"})
+    if data is None:
+        print("  WARNING: Index data (SPX/VIX) not available — upgrade to Polygon Indices plan.")
+        return {}
+    out = {}
+    for item in data.get("results", []):
+        if item.get("error") == "NOT_ENTITLED":
+            print(f"  WARNING: {item.get('ticker')} not entitled on current Polygon plan.")
+            continue
+        ticker  = item.get("ticker", "")
+        session = item.get("session", {})
+        close   = session.get("close") or item.get("value")
+        prev    = session.get("previous_close")
+        change  = session.get("change", 0) or 0
+        pct     = session.get("change_percent", 0) or 0
+        if close and prev and pct == 0:
+            pct = round((float(close) - float(prev)) / float(prev) * 100, 2)
+        key = {"I:SPX": "spx", "I:VIX": "vix"}.get(ticker)
+        if not key or not close:
+            continue
+        out[key] = {
+            "close":      round(float(close), 2),
+            "pct_change": round(float(pct), 2),
+            "net_change": round(float(change), 2),
+        }
+    return out
+
+
+
+def _fetch_index_aggs(target_date):
+    """Fetch SPX and VIX closing prices for a past date via daily aggs."""
+    out      = {}
+    date_str = str(target_date)
+    prev_str = str(target_date - timedelta(days=7))
+    for ticker, key in [("I:SPX", "spx"), ("I:VIX", "vix")]:
+        try:
+            data = _get(f"/v2/aggs/ticker/{ticker}/range/1/day/{prev_str}/{date_str}",
+                        {"adjusted": "true", "sort": "asc", "limit": 10})
+            bars = data.get("results", [])
+            if len(bars) < 2:
+                continue
+            close  = bars[-1]["c"]
+            prev_c = bars[-2]["c"]
+            pct    = round((close - prev_c) / prev_c * 100, 2)
+            out[key] = {"close": round(close, 2), "pct_change": pct,
+                        "net_change": round(close - prev_c, 2)}
+        except Exception as e:
+            print(f"  WARNING: Could not fetch historical {ticker} — {e}")
+    return out
+
+
+# ── SPX price history (50-day MA) ─────────────────────────────────────────────
+
+def fetch_spx_history(target_date=None):
     """
     Fetch SPX daily history. Returns (ma_50, pct_change).
-    pct_change is derived from the last two candles — reliable even off-hours.
     """
     target_date = target_date or date.today()
-    tickers_to_try = ["$SPX.X", "SPX", "$SPX"]
+    from_date   = str(target_date - timedelta(days=90))
+    to_date     = str(target_date)
 
-    candles = []
-    for ticker in tickers_to_try:
-        try:
-            resp = c.get_price_history_every_day(
-                ticker,
-                start_datetime=datetime.combine(
-                    target_date - timedelta(days=90),
-                    datetime.min.time()
-                ),
-                end_datetime=datetime.combine(
-                    target_date + timedelta(days=1),
-                    datetime.min.time()
-                ),
-            )
-            if resp.status_code == 200:
-                candles = resp.json().get("candles", [])
-                if candles:
-                    print(f"  SPX history fetched using ticker: {ticker}")
-                    break
-        except Exception:
-            continue
-
-    if not candles:
-        print("  WARNING: Could not fetch SPX price history. MA and pct will be skipped.")
+    try:
+        data = _get(f"/v2/aggs/ticker/I:SPX/range/1/day/{from_date}/{to_date}",
+                    {"adjusted": "true", "sort": "asc", "limit": 100})
+        bars = data.get("results", [])
+    except Exception as e:
+        print(f"  WARNING: Could not fetch SPX history — {e}")
         return None, None
 
-    closes = [bar["close"] for bar in candles]
-    if len(closes) < 50:
-        print(f"  WARNING: Only {len(closes)} days of history, using available data.")
+    if not bars:
+        print("  WARNING: No SPX history bars returned.")
+        return None, None
+
+    closes  = [b["c"] for b in bars]
     last_50 = closes[-50:] if len(closes) >= 50 else closes
-    ma_50 = round(sum(last_50) / len(last_50), 2)
+    ma_50   = round(sum(last_50) / len(last_50), 2)
 
     pct_change = None
     if len(closes) >= 2:
-        prev_c  = closes[-2]
-        today_c = closes[-1]
+        prev_c, today_c = closes[-2], closes[-1]
         if prev_c:
             pct_change = round((today_c - prev_c) / prev_c * 100, 2)
 
     return ma_50, pct_change
 
 
-def fetch_0dte_chain(c, debug=False):
-    """Fetch the full SPX 0DTE options chain. Returns raw chain JSON."""
-    today = date.today()
-    resp = c.get_option_chain("SPX", from_date=today, to_date=today)
-    resp.raise_for_status()
-    chain = resp.json()
+# ── 0DTE options chain ────────────────────────────────────────────────────────
 
-    if debug:
-        # Print first contract's full structure so we can verify field names
-        for exp_map in ["callExpDateMap", "putExpDateMap"]:
-            for exp_date, strikes in chain.get(exp_map, {}).items():
-                for strike, contracts in list(strikes.items())[:1]:
-                    print(f"\n-- Sample contract ({exp_map}, strike {strike}) --")
-                    print(json.dumps(contracts[0], indent=2)[:800])
-                    break
-                break
+def fetch_0dte_chain(target_date=None):
+    """
+    Fetch all SPX 0DTE option contract snapshots from Polygon.
+    Paginates until all contracts for today are retrieved.
+    Returns a flat list of contract dicts.
+    """
+    target_date = target_date or date.today()
+    exp_date    = str(target_date)
+    contracts   = []
+    cursor      = None
+
+    print(f"  Fetching SPX 0DTE options chain ({exp_date})...")
+    page_count = 0
+    while page_count < 50:
+        params = {"expiration_date": exp_date, "limit": 250}
+        if cursor:
+            params["cursor"] = cursor
+
+        try:
+            data = _get("/v3/snapshot/options/SPX", params)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403:
+                print("  WARNING: Polygon options endpoint returned 403 — "
+                      "your plan may not include options data.")
+            raise
+
+        contracts.extend(data.get("results", []))
+        page_count += 1
+
+        next_url = data.get("next_url", "")
+        if not next_url:
+            break
+        cursor = parse_qs(urlparse(next_url).query).get("cursor", [None])[0]
+        if not cursor:
             break
 
-    return chain
+    print(f"  Retrieved {len(contracts)} contracts.")
+    return contracts
 
 
-def fetch_0dte_volume(chain):
+def fetch_0dte_volume(contracts):
     """
-    Derive total volume, top strikes, and 20-day average from the chain.
+    Derive total volume, top strikes, and rolling average from contract snapshots.
     Also finds The Number — the biggest intraday % winner.
     """
-    today_volume   = 0
-    call_volumes   = {}   # strike -> volume
-    put_volumes    = {}
-    the_number     = None
-    best_pct       = 0
+    today_volume = 0
+    call_volumes = {}
+    put_volumes  = {}
+    the_number   = None
+    best_pct     = 0
 
-    for exp_map_key, vol_map in [
-        ("callExpDateMap", call_volumes),
-        ("putExpDateMap",  put_volumes),
-    ]:
-        for exp_date, strikes in chain.get(exp_map_key, {}).items():
-            for strike_str, contracts in strikes.items():
-                strike = float(strike_str)
-                for contract in contracts:
-                    vol = contract.get("totalVolume", 0)
-                    today_volume += vol
-                    vol_map[strike] = vol_map.get(strike, 0) + vol
+    for c in contracts:
+        details  = c.get("details", {})
+        day      = c.get("day", {})
+        ctype    = details.get("contract_type", "").lower()   # "call" or "put"
+        strike   = float(details.get("strike_price", 0))
+        vol      = int(day.get("volume", 0) or 0)
+        open_px  = day.get("open",  0) or 0
+        high_px  = day.get("high",  0) or 0
+        last_px  = day.get("close", 0) or 0
 
-                    # The Number: find biggest intraday % gainer
-                    # Schwab returns OHLC at top level in camelCase
-                    # Need meaningful open price (> $0.05) and real volume (> 50 contracts)
-                    open_px = (contract.get("openPrice")
-                               or contract.get("open")
-                               or contract.get("day", {}).get("open", 0))
-                    high_px = (contract.get("highPrice")
-                               or contract.get("high")
-                               or contract.get("day", {}).get("high", 0))
-                    last_px = (contract.get("lastPrice")
-                               or contract.get("last")
-                               or contract.get("day", {}).get("last", 0))
-                    day_vol = vol
+        today_volume += vol
+        vol_map = call_volumes if ctype == "call" else put_volumes
+        vol_map[strike] = vol_map.get(strike, 0) + vol
 
-                    if open_px and open_px >= 0.05 and high_px > open_px and day_vol >= 50:
-                        pct = (high_px - open_px) / open_px * 100
-                        if pct > best_pct:
-                            best_pct = pct
-                            the_number = {
-                                "strike":    strike,
-                                "type":      "call" if exp_map_key == "callExpDateMap" else "put",
-                                "open":      open_px,
-                                "high":      high_px,
-                                "last":      last_px,
-                                "volume":    day_vol,
-                                "pct_gain":  round(pct, 0),
-                                "gain_dollars": round((high_px - open_px) * 100, 0),
-                            }
+        # The Number: biggest intraday % gainer with meaningful open + volume
+        if open_px >= 0.05 and high_px > open_px and vol >= 50:
+            pct = (high_px - open_px) / open_px * 100
+            if pct > best_pct:
+                best_pct   = pct
+                the_number = {
+                    "strike":       strike,
+                    "type":         ctype,
+                    "open":         open_px,
+                    "high":         high_px,
+                    "last":         last_px,
+                    "volume":       vol,
+                    "pct_gain":     round(pct, 0),
+                    "gain_dollars": round((high_px - open_px) * 100, 0),
+                }
 
     avg = _get_rolling_average(today_volume)
 
-    # Top 3 call and put strikes by volume
     top_calls = sorted(call_volumes.items(), key=lambda x: x[1], reverse=True)[:3]
     top_puts  = sorted(put_volumes.items(),  key=lambda x: x[1], reverse=True)[:3]
 
@@ -290,18 +311,12 @@ def fetch_0dte_volume(chain):
 
 
 def _get_rolling_average(today_volume):
-    """
-    Load the last 20 days of saved market data to compute rolling avg volume.
-    Falls back to today's volume if not enough history yet.
-    """
     if not os.path.exists(config.MARKET_DATA_DIR):
         return today_volume
-
     files = sorted([
         f for f in os.listdir(config.MARKET_DATA_DIR)
-        if f.endswith(".json")
-    ])[-20:]  # last 20 files
-
+        if f.endswith(".json") and not f.startswith("premarket_")
+    ])[-20:]
     volumes = []
     for fname in files:
         path = os.path.join(config.MARKET_DATA_DIR, fname)
@@ -310,26 +325,19 @@ def _get_rolling_average(today_volume):
         vol = data.get("options", {}).get("today_volume")
         if vol:
             volumes.append(vol)
-
-    if not volumes:
-        return today_volume
-
-    return round(sum(volumes) / len(volumes))
+    return round(sum(volumes) / len(volumes)) if volumes else today_volume
 
 
-# ── Save ──────────────────────────────────────────────────────────────────────
+# ── Save / load ───────────────────────────────────────────────────────────────
 
 def save(data):
     os.makedirs(config.MARKET_DATA_DIR, exist_ok=True)
-    filename = f"{data['date']}.json"
-    path = os.path.join(config.MARKET_DATA_DIR, filename)
+    path = os.path.join(config.MARKET_DATA_DIR, f"{data['date']}.json")
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"Saved: {path}")
     return path
 
-
-# ── Load existing file (for merge) ────────────────────────────────────────────
 
 def load_existing(today):
     path = os.path.join(config.MARKET_DATA_DIR, f"{today}.json")
@@ -343,73 +351,49 @@ def load_existing(today):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--mode",
-        choices=["options", "quotes", "full"],
-        default="full",
-        help="options=3:50PM fetch, quotes=4:35PM fetch, full=both"
-    )
-    parser.add_argument(
-        "--force", action="store_true",
-        help="Run even on non-trading days (for testing)"
-    )
-    parser.add_argument(
-        "--date",
-        default=None,
-        help="Target date YYYY-MM-DD (default: today). Use with --force to backfill past dates."
-    )
+    parser.add_argument("--mode", choices=["options", "quotes", "full"], default="full")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--date", default=None)
     args = parser.parse_args()
+
+    if not config.POLYGON_API_KEY:
+        print("ERROR: POLYGON_API_KEY is not set. Add it to .env or config.py.")
+        sys.exit(1)
 
     if args.date:
         try:
             target_date = date.fromisoformat(args.date)
         except ValueError:
-            print(f"ERROR: Invalid --date format. Use YYYY-MM-DD.")
+            print("ERROR: Invalid --date format. Use YYYY-MM-DD.")
             sys.exit(1)
     else:
         target_date = date.today()
+
     today = str(target_date)
-    is_past = target_date < date.today()
 
     if not args.force and not is_trading_day(target_date):
         print(f"{today} is not a trading day. Skipping. Use --force to override.")
         sys.exit(0)
 
-    print(f"Fetching market data [{args.mode}] for {today}{'  (backfill)' if is_past else ''}...")
-    c = get_client()
+    print(f"Fetching market data [{args.mode}] for {today}"
+          f"{'  (backfill)' if target_date < date.today() else ''}...")
 
-    # ── Phase 1: Options chain (3:50 PM ET) ───────────────────────────────────
+    # ── Phase 1: Options chain (3:50 PM ET) ──────────────────────────────────
     if args.mode in ("options", "full"):
-        if is_past:
-            print("  Skipping options chain for past dates (0DTE contracts expired).")
-            options = load_existing(today).get("options", {
-                "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
-                "call_volume": None, "put_volume": None, "put_call_ratio": None,
-                "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
-            })
-        else:
-            print("  Fetching 0DTE SPX options chain...")
-            try:
-                chain   = fetch_0dte_chain(c)
-                options = fetch_0dte_volume(chain)
-                print(f"  Options volume: {options.get('today_volume', 0):,}")
-                tn = options.get("the_number")
-                if tn:
-                    print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
-                          f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
-            except Exception as e:
-                if "invalid_client" in str(e) or "Unauthorized" in str(e) or "OAuthError" in type(e).__name__:
-                    print(f"ERROR: Schwab authentication failed — {e}")
-                    sys.exit(1)
-                print(f"  WARNING: Could not fetch options chain — {e}")
-                options = {
-                    "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
-                    "call_volume": None, "put_volume": None, "put_call_ratio": None,
-                    "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
-                }
+        try:
+            contracts = fetch_0dte_chain(target_date)
+            options   = fetch_0dte_volume(contracts)
+            print(f"  Options volume: {options.get('today_volume', 0):,}")
+            tn = options.get("the_number")
+            if tn:
+                print(f"  Best 0DTE trade: SPX {tn['strike']:.0f} {tn['type'].upper()} "
+                      f"{tn['open']:.2f} -> {tn['high']:.2f} (+{tn['pct_gain']:.0f}%)")
+        except Exception as e:
+            print(f"  WARNING: Could not fetch options chain — {e}")
+            options = load_existing(today).get("options") or _empty_options()
 
         existing = load_existing(today)
-        payload = {
+        payload  = {
             "date":       today,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
             "spx": existing.get("spx", {}),
@@ -418,54 +402,48 @@ def main():
             "qqq": existing.get("qqq", {}),
             "options": options,
         }
-        path = save(payload)
-        print(f"Options data saved to {path}")
+        save(payload)
 
     # ── Phase 2: Quotes + MA (4:35 PM ET) ────────────────────────────────────
     if args.mode in ("quotes", "full"):
-        print("  Fetching SPX history (MA + pct_change from candles)...")
-        ma_50, spx_pct = fetch_spx_history(c, target_date)
-
-        print("  Fetching VIX pct_change from candle history...")
-        vix_pct = _pct_from_candles(c, ["$VIX.X", "VIX", "$VIX"], target_date)
-        if vix_pct is not None:
-            print(f"  VIX pct from candles: {vix_pct:+.2f}%")
-        else:
-            print("  WARNING: Could not derive VIX pct from candle history.")
-
-        pct_overrides = {"spx": spx_pct, "vix": vix_pct}
+        print("  Fetching SPX history (50-day MA)...")
+        ma_50, spx_pct = fetch_spx_history(target_date)
 
         print("  Fetching quotes (SPX, VIX, SPY, QQQ)...")
-        quotes = fetch_quotes(c, pct_overrides=pct_overrides)
-        quotes["spx"]["ma_50"] = ma_50
+        quotes = fetch_quotes(target_date)
 
-        if args.mode == "full":
-            existing = {}
-        else:
-            existing = load_existing(today)
-        payload = {
+        # Override SPX pct_change with candle-derived value (more reliable)
+        if "spx" in quotes and spx_pct is not None:
+            quotes["spx"]["pct_change"] = spx_pct
+            close = quotes["spx"].get("close")
+            if close:
+                quotes["spx"]["net_change"] = round(close * spx_pct / 100, 2)
+        if "spx" in quotes:
+            quotes["spx"]["ma_50"] = ma_50
+
+        existing = load_existing(today) if args.mode == "quotes" else {}
+        payload  = {
             "date":       today,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
             **quotes,
-            "options": existing.get("options", {
-                "today_volume": None, "volume_20day_avg": None, "vs_average_pct": None,
-                "call_volume": None, "put_volume": None, "put_call_ratio": None,
-                "top_call_strikes": [], "top_put_strikes": [], "the_number": None,
-            }),
+            "options": existing.get("options") or _empty_options(),
         }
         path = save(payload)
 
         print("\n-- Market Snapshot --------------------------")
         for ticker in ["spx", "vix", "spy", "qqq"]:
-            d = payload[ticker]
-            arrow = "+" if (d.get("pct_change") or 0) >= 0 else "-"
+            d     = payload.get(ticker, {})
             close = d.get("close")
-            pct   = abs(d.get("pct_change") or 0)
-            print(f"  {ticker.upper():4s}  {close:>10,.2f}  {arrow} {pct:.2f}%") if close else print(f"  {ticker.upper():4s}  unavailable")
+            pct   = d.get("pct_change", 0) or 0
+            arrow = "+" if pct >= 0 else "-"
+            if close:
+                print(f"  {ticker.upper():4s}  {close:>10,.2f}  {arrow} {abs(pct):.2f}%")
+            else:
+                print(f"  {ticker.upper():4s}  unavailable")
         print(f"\n  SPX 50-day MA:  {f'{ma_50:,.2f}' if ma_50 else 'unavailable'}")
-        opts = payload["options"]
+        opts = payload.get("options", {})
         vol  = opts.get("today_volume")
-        print(f"  0DTE Volume:    {f'{vol:,}' if vol is not None else 'unavailable (run --mode options before 4PM)'}")
+        print(f"  0DTE Volume:    {f'{vol:,}' if vol is not None else 'run --mode options before 4 PM'}")
         print(f"\nDone. Saved to {path}")
 
 

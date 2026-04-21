@@ -309,12 +309,12 @@
         <div class="field level-key-row">
           <div class="level-row">
             <div>
-              <label>Key Level Label</label>
-              <input type="text" id="level_key_label" value="Key Level (Pitchfork)" required />
+              <label>Premarket Price Label</label>
+              <input type="text" id="level_key_label" value="Premarket Price" required />
             </div>
             <div>
-              <label>Value</label>
-              <input type="number" id="level_key_value" step="0.25" placeholder="e.g. 6767" required />
+              <label>Value <span id="premktStatus" style="font-size:10px; color:#6B7280; font-weight:normal; letter-spacing:0;"></span></label>
+              <input type="number" id="level_key_value" step="0.25" placeholder="Auto-fills at 6:00 AM" required />
             </div>
           </div>
         </div>
@@ -353,8 +353,8 @@
       </div>
     </div>
 
-    <!-- THE NUMBER — auto-generated from Schwab options chain, no input needed -->
-    <!-- VOLUME ANOMALY — auto-generated from Schwab options chain, no input needed -->
+    <!-- THE NUMBER — auto-generated from Polygon.io options chain, no input needed -->
+    <!-- VOLUME ANOMALY — auto-generated from Polygon.io options chain, no input needed -->
 
     <!-- EDITOR'S NOTE -->
     <div class="card">
@@ -441,7 +441,7 @@
 
       signal_color: color,
       signal_text: g('signal_text'),
-      signal_attribution: 'Licia Leslie',
+      signal_attribution: AUTHOR_NAMES[g('author')] || 'Licia Leslie',
 
       level_resistance_2_label: g('level_resistance_2_label'),
       level_resistance_2_value: gf('level_resistance_2_value'),
@@ -585,6 +585,28 @@
 
   // Restore on load
   restoreFromStorage();
+
+  // ── Auto-fetch premarket SPX price ───────────────────────────────────────
+  async function fetchPremarketPrice() {
+    if (!IS_SERVER) return;
+    const valueEl  = document.getElementById('level_key_value');
+    const statusEl = document.getElementById('premktStatus');
+    if (valueEl.value.trim()) return; // already has a value from storage or user
+    try {
+      const resp = await fetch('/0dte-daily/premarket');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.ok && data.spx_premarket && !valueEl.value.trim()) {
+        valueEl.value = data.spx_premarket;
+        const fetchedAt = data.fetched_at
+          ? new Date(data.fetched_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' })
+          : '6:00 AM';
+        statusEl.textContent = `· auto-fetched ${fetchedAt} ET`;
+        autosave();
+      }
+    } catch (e) { /* network/auth failure — silently skip */ }
+  }
+  fetchPremarketPrice();
 </script>
 
 </body>
