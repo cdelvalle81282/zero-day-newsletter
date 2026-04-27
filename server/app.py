@@ -354,7 +354,7 @@ def build_dashboard_data(target_date):
         the_number = f"+{pct:,}%"
         the_number_text = (
             f"SPX {int(tn['strike']):,} {tn['type'].upper()} opened at "
-            f"${tn['open']:.2f}, hit ${tn['high']:.2f} — "
+            f"${tn['open']:.2f}, hit ${tn['high']:.2f}, "
             f"${int(tn['gain_dollars']):,} per contract."
         )
 

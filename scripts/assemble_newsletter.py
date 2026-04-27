@@ -100,9 +100,9 @@ def signal_config(color):
 def signal_key_html(active_color):
     """Build the 3-row signal legend, highlighting the active color."""
     items = [
-        ("green",  "#22C55E", "GREEN",  "Clear market bias — look to trade in the direction of the trend."),
-        ("yellow", "#D4A017", "YELLOW", "Transitional market bias — mixed signals; size down and wait for confirmation."),
-        ("red",    "#CC3333", "RED",    "No clear market bias — narrow range or no trend; high-probability plays are harder to find."),
+        ("green",  "#22C55E", "GREEN",  "Clear market bias. Look to trade in the direction of the trend."),
+        ("yellow", "#D4A017", "YELLOW", "Transitional market bias. Mixed signals; size down and wait for confirmation."),
+        ("red",    "#CC3333", "RED",    "No clear market bias. Narrow range or no trend; high-probability plays are harder to find."),
     ]
     rows = []
     for color, hex_color, label, desc in items:
@@ -176,7 +176,7 @@ def generate_the_number(tn):
     number_value = f"+{pct:,}%"
     number_text  = (
         f"An SPX {strike:,} {kind} expiring today opened at ${open_:.2f}. "
-        f"By the high of the day it traded at ${high_:.2f} — "
+        f"By the high of the day it traded at ${high_:.2f}, "
         f"a ${gain:,} gain per contract ({pct:,}%) for traders who caught the move."
     )
     return number_value, number_text
