@@ -123,7 +123,7 @@ def signal_key_html(active_color):
             f'font-weight:bold;color:{hex_color};">{label}</span>'
             f'{badge}'
             f'<span style="font-family:Tahoma,Geneva,Verdana,sans-serif;font-size:11px;'
-            f'color:#2A2A2A;"> &mdash; {desc}</span>'
+            f'color:#2A2A2A;">: {desc}</span>'
             f'</td>'
             f'</tr>'
         )
