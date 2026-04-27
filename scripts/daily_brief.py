@@ -138,6 +138,23 @@ def collect(target_date, existing=None):
     volume_text     = ask("Narrative paragraph",
                           default=ex.get("volume_anomaly_text"))
 
+    # ── CTA Block ─────────────────────────────────────────────────────────────
+    print()
+    print("--- CTA BLOCK (newsletter/product push) ---")
+    print("  (Pre-fills from yesterday — only update when changing the offer)")
+    cta_headline    = ask("CTA headline",
+                          default=ex.get("cta_headline")    or prev.get("cta_headline",    "Trade 0DTE With the Pros"),
+                          required=False) or ""
+    cta_body        = ask("CTA body text",
+                          default=ex.get("cta_body")        or prev.get("cta_body",        ""),
+                          required=False) or ""
+    cta_url         = ask("CTA link URL",
+                          default=ex.get("cta_url")         or prev.get("cta_url",         "https://optionpit.com"),
+                          required=False) or ""
+    cta_button_text = ask("CTA button label",
+                          default=ex.get("cta_button_text") or prev.get("cta_button_text", "Learn More"),
+                          required=False) or ""
+
     # ── Editor's Note ─────────────────────────────────────────────────────────
     print()
     print("--- EDITOR'S NOTE ---")
@@ -181,6 +198,11 @@ def collect(target_date, existing=None):
         "volume_anomaly_text":     volume_text,
 
         "editor_note_text": editor_note,
+
+        "cta_headline":    cta_headline,
+        "cta_body":        cta_body,
+        "cta_url":         cta_url,
+        "cta_button_text": cta_button_text,
     }
 
 

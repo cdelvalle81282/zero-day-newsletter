@@ -97,6 +97,44 @@ def signal_config(color):
     }.get(color.lower(), {"hex": "#D4A017", "icon": "&#x26A0;", "label": "YELLOW LIGHT"})
 
 
+def signal_key_html(active_color):
+    """Build the 3-row signal legend, highlighting the active color."""
+    items = [
+        ("green",  "#22C55E", "GREEN",  "Clear market bias — look to trade in the direction of the trend."),
+        ("yellow", "#D4A017", "YELLOW", "Transitional market bias — mixed signals; size down and wait for confirmation."),
+        ("red",    "#CC3333", "RED",    "No clear market bias — narrow range or no trend; high-probability plays are harder to find."),
+    ]
+    rows = []
+    for color, hex_color, label, desc in items:
+        is_active = color == active_color.lower()
+        bg     = "#FAFAFA" if not is_active else {"green": "#F0FFF4", "yellow": "#FFFBEB", "red": "#FFF0F0"}.get(color, "#FAFAFA")
+        border = f"border-left:3px solid {hex_color};" if is_active else "border-left:3px solid transparent;"
+        badge  = (
+            f' <span style="display:inline-block;padding:1px 5px;background-color:{hex_color};'
+            f'color:#FFFFFF;font-family:Tahoma,Geneva,Verdana,sans-serif;font-size:9px;'
+            f'font-weight:bold;letter-spacing:1px;vertical-align:middle;">TODAY</span>'
+        ) if is_active else ""
+        rows.append(
+            f'<tr>'
+            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #F0F0F0;{border}">'
+            f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+            f'background-color:{hex_color};margin-right:6px;vertical-align:middle;"></span>'
+            f'<span style="font-family:Tahoma,Geneva,Verdana,sans-serif;font-size:11px;'
+            f'font-weight:bold;color:{hex_color};">{label}</span>'
+            f'{badge}'
+            f'<span style="font-family:Tahoma,Geneva,Verdana,sans-serif;font-size:11px;'
+            f'color:#2A2A2A;"> &mdash; {desc}</span>'
+            f'</td>'
+            f'</tr>'
+        )
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"'
+        ' style="margin-top:14px;border:1px solid #E5E7EB;">'
+        + ''.join(rows)
+        + '</table>'
+    )
+
+
 def format_date_long(d):
     """2026-04-17 → 'Friday, April 17, 2026'"""
     dt = datetime.strptime(str(d), "%Y-%m-%d")
@@ -177,12 +215,18 @@ def generate_volume_anomaly(options):
 
     # Call vs put skew
     if call_vol and put_vol:
-        dominant = "call" if call_vol > put_vol else "put"
-        light    = "put"  if call_vol > put_vol else "call"
-        parts.append(
-            f"{dominant.capitalize()} activity dominated, "
-            f"with {fmt_volume(call_vol)} calls vs {fmt_volume(put_vol)} puts."
-        )
+        skew = abs(call_vol - put_vol) / max(call_vol, put_vol)
+        if skew >= 0.10:
+            dominant = "call" if call_vol > put_vol else "put"
+            parts.append(
+                f"{dominant.capitalize()} activity dominated, "
+                f"with {fmt_volume(call_vol)} calls vs {fmt_volume(put_vol)} puts."
+            )
+        else:
+            parts.append(
+                f"Call and put activity were roughly balanced, "
+                f"with {fmt_volume(call_vol)} calls vs {fmt_volume(put_vol)} puts."
+            )
 
     # Top call strikes
     if top_calls:
@@ -277,6 +321,7 @@ def build_tokens(brief, market, target_date):
         "SIGNAL_LABEL":       sig["label"],
         "SIGNAL_TEXT":        html_escape(brief.get("signal_text", "")),
         "SIGNAL_ATTRIBUTION": html_escape(author_data["name"]),
+        "SIGNAL_KEY_HTML":    signal_key_html(brief.get("signal_color", "yellow")),
 
         # Levels (labels are user text, values are formatted numbers — both escaped)
         "LEVEL_R2_LABEL":  html_escape(brief.get("level_resistance_2_label", "Resistance 2")),
@@ -302,6 +347,12 @@ def build_tokens(brief, market, target_date):
         # Editor's Note — always from brief
         "EDITOR_NOTE_TEXT": html_escape(brief.get("editor_note_text", "")),
         "EDITORIAL_LINK_HTML": editorial_link_html,
+
+        # CTA block — filled from daily brief, carries forward day to day
+        "CTA_HEADLINE":    html_escape(brief.get("cta_headline",    "Trade 0DTE With the Pros")),
+        "CTA_BODY":        html_escape(brief.get("cta_body",        "Join the Option Pit live trading room for real-time 0DTE setups, levels, and alerts from Mark, Licia, and the team.")),
+        "CTA_URL":         html_escape(brief.get("cta_url",         "https://optionpit.com")),
+        "CTA_BUTTON_TEXT": html_escape(brief.get("cta_button_text", "Learn More")),
 
         # Market Snapshot
         "SNAP_SPX_VALUE":  fmt_price(spx.get("close")),
