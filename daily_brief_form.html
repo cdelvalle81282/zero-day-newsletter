@@ -207,6 +207,54 @@
     }
     .save-status.saved { color: #22C55E; }
 
+    /* Chart upload */
+    .chart-upload-area {
+      border: 2px dashed #E5E7EB;
+      border-radius: 4px;
+      padding: 16px;
+      text-align: center;
+      background: #FAFAFA;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .chart-upload-area:hover { border-color: #9CA3AF; }
+    .chart-upload-area.has-image { border-style: solid; border-color: #E5E7EB; cursor: default; }
+    .chart-preview-img {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      border-radius: 3px;
+      display: block;
+      margin-bottom: 10px;
+    }
+    .btn-sm {
+      padding: 6px 14px;
+      font-size: 12px;
+    }
+    .upload-hint {
+      font-size: 12px;
+      color: #9CA3AF;
+      margin-top: 6px;
+    }
+
+    /* Sync banner */
+    #syncBanner {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: #1E3A5F;
+      color: #FFFFFE;
+      padding: 10px 20px;
+      z-index: 1000;
+      font-size: 13px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #syncBanner.show { display: flex; }
+    #syncBanner a { color: #60A5FA; text-decoration: underline; cursor: pointer; }
+    #syncBanner button { background: transparent; border: 1px solid #4B6A8A; color: #FFFFFE; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; font-family: Tahoma, Geneva, Verdana, sans-serif; }
+
     @media (max-width: 480px) {
       .level-row { grid-template-columns: 1fr; }
       .signal-btn { font-size: 11px; padding: 12px 6px; }
@@ -214,6 +262,11 @@
   </style>
 </head>
 <body>
+
+<div id="syncBanner">
+  <span>Another editor updated this brief. <a onclick="loadLatest(event)">Load their version</a></span>
+  <button onclick="dismissSyncBanner()">Dismiss</button>
+</div>
 
 <div class="container">
 
@@ -350,6 +403,23 @@
           <textarea id="levels_note" name="levels_note" rows="2" placeholder="e.g. Futures topped within 3 bucks of resistance yesterday..."></textarea>
         </div>
 
+        <div class="field">
+          <label>Levels Chart <span class="hint">— optional chart image showing the levels above</span></label>
+          <div id="chartUploadArea" class="chart-upload-area" onclick="triggerChartPick()">
+            <div id="chartEmpty">
+              <div style="font-size:24px;color:#D1D5DB;">&#128444;</div>
+              <div style="font-size:13px;color:#6B7280;margin-top:6px;">Click to upload chart image</div>
+              <div class="upload-hint">JPG, PNG, GIF, or WebP &middot; max 5 MB</div>
+            </div>
+            <div id="chartFilled" style="display:none;">
+              <img id="chartPreviewImg" class="chart-preview-img" src="" alt="Levels chart preview" />
+              <button type="button" class="btn btn-secondary btn-sm" onclick="removeChart(event)">Remove Image</button>
+            </div>
+          </div>
+          <input type="file" id="chartFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;" onchange="handleChartFile(this)" />
+          <input type="hidden" id="levels_chart_url" />
+        </div>
+
       </div>
     </div>
 
@@ -454,6 +524,7 @@
       level_support_2_label:    g('level_support_2_label'),
       level_support_2_value:    gf('level_support_2_value'),
       levels_note:              g('levels_note'),
+      levels_chart_url:         g('levels_chart_url'),
 
       author:           g('author') || 'licia',
       editor_note_text: g('editor_note_text'),
@@ -549,42 +620,166 @@
   // ── Auto-restore from localStorage ───────────────────────────────────────
   const STORAGE_KEY = `zerodaybriefform_${dateStr}`;
 
+  const FORM_FIELDS = [
+    'signal_text','level_resistance_2_label','level_resistance_2_value',
+    'level_resistance_1_label','level_resistance_1_value','level_key_label','level_key_value',
+    'level_support_1_label','level_support_1_value','level_support_2_label','level_support_2_value',
+    'levels_note','levels_chart_url','editor_note_text','editorial_url','signal_color','author'
+  ];
+
   function autosave() {
-    const fields = ['signal_text','level_resistance_2_label','level_resistance_2_value',
-      'level_resistance_1_label','level_resistance_1_value','level_key_label','level_key_value',
-      'level_support_1_label','level_support_1_value','level_support_2_label','level_support_2_value',
-      'levels_note','editor_note_text','editorial_url','signal_color','author'];
     const saved = {};
-    fields.forEach(id => {
+    FORM_FIELDS.forEach(id => {
       const el = document.getElementById(id);
       if (el) saved[id] = el.value;
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-
     document.getElementById('saveStatus').textContent = 'Auto-saved';
+  }
+
+  function populateFromData(data) {
+    FORM_FIELDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && data[id] !== undefined && data[id] !== null) el.value = data[id];
+    });
+    if (data.signal_color) selectSignal(data.signal_color);
+    if (data.author) selectAuthor(data.author, true);
+    if (data.levels_chart_url) showChartPreview(data.levels_chart_url);
   }
 
   function restoreFromStorage() {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    Object.entries(saved).forEach(([id, val]) => {
-      const el = document.getElementById(id);
-      if (el) el.value = val;
-    });
-    // Restore signal button state
-    if (saved.signal_color) selectSignal(saved.signal_color);
-    // Restore author
-    if (saved.author) selectAuthor(saved.author);
-    document.getElementById('saveStatus').textContent = 'Restored from earlier session';
+    if (!raw) return null;
+    try {
+      const saved = JSON.parse(raw);
+      populateFromData(saved);
+      document.getElementById('saveStatus').textContent = 'Restored from earlier session';
+      return saved.created_at || null;
+    } catch (e) { return null; }
+  }
+
+  // ── Chart upload ──────────────────────────────────────────────────────────
+  function triggerChartPick() {
+    if (document.getElementById('chartFilled').style.display !== 'none') return;
+    document.getElementById('chartFile').click();
+  }
+
+  function showChartPreview(url) {
+    document.getElementById('chartPreviewImg').src = url;
+    document.getElementById('chartEmpty').style.display = 'none';
+    document.getElementById('chartFilled').style.display = 'block';
+    document.getElementById('chartUploadArea').classList.add('has-image');
+  }
+
+  function removeChart(event) {
+    if (event) event.stopPropagation();
+    document.getElementById('levels_chart_url').value = '';
+    document.getElementById('chartPreviewImg').src = '';
+    document.getElementById('chartEmpty').style.display = 'block';
+    document.getElementById('chartFilled').style.display = 'none';
+    document.getElementById('chartUploadArea').classList.remove('has-image');
+    document.getElementById('chartFile').value = '';
+    autosave();
+  }
+
+  async function handleChartFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (!IS_SERVER) {
+      showToast('Image upload only works when connected to the server.', 'error');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('chart', file);
+    showToast('Uploading chart...');
+    try {
+      const resp = await fetch(`/0dte-daily/upload-chart/${dateStr}`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        document.getElementById('levels_chart_url').value = data.url;
+        showChartPreview(data.url);
+        autosave();
+        showToast('Chart uploaded.');
+      } else {
+        showToast('Upload failed: ' + (data.error || 'Unknown error'), 'error');
+      }
+    } catch (e) {
+      showToast('Upload failed — could not reach server.', 'error');
+    }
+  }
+
+  // ── Real-time sync ────────────────────────────────────────────────────────
+  let lastServerCreatedAt = null;
+  let pendingSyncData = null;
+
+  async function loadFromServer(isInitial) {
+    if (!IS_SERVER) return null;
+    try {
+      const resp = await fetch(`/0dte-daily/brief-data/${dateStr}`);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (!data.created_at) return null;
+
+      if (isInitial) {
+        const localRaw = localStorage.getItem(STORAGE_KEY);
+        const localCreatedAt = localRaw ? (JSON.parse(localRaw).created_at || '') : '';
+        if (!localCreatedAt || data.created_at > localCreatedAt) {
+          populateFromData(data);
+          lastServerCreatedAt = data.created_at;
+          document.getElementById('saveStatus').textContent = 'Loaded from server';
+        } else {
+          lastServerCreatedAt = data.created_at;
+        }
+      }
+      return data;
+    } catch (e) { return null; }
+  }
+
+  function showSyncBanner() {
+    document.getElementById('syncBanner').classList.add('show');
+  }
+
+  function dismissSyncBanner() {
+    document.getElementById('syncBanner').classList.remove('show');
+    pendingSyncData = null;
+  }
+
+  function loadLatest(event) {
+    event.preventDefault();
+    if (pendingSyncData) {
+      populateFromData(pendingSyncData);
+      lastServerCreatedAt = pendingSyncData.created_at;
+      document.getElementById('saveStatus').textContent = 'Loaded latest version';
+    }
+    dismissSyncBanner();
+  }
+
+  async function pollForUpdates() {
+    if (!IS_SERVER) return;
+    try {
+      const resp = await fetch(`/0dte-daily/brief-data/${dateStr}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.created_at && lastServerCreatedAt && data.created_at > lastServerCreatedAt) {
+        pendingSyncData = data;
+        showSyncBanner();
+      }
+    } catch (e) {}
   }
 
   // Autosave every 30 seconds and on input
   document.getElementById('briefForm').addEventListener('input', autosave);
   setInterval(autosave, 30000);
 
-  // Restore on load
+  // Poll for remote updates every 30 seconds
+  setInterval(pollForUpdates, 30000);
+
+  // Restore local state, then check server for newer version
   restoreFromStorage();
+  loadFromServer(true);
 
   // ── Auto-fetch premarket SPX price ───────────────────────────────────────
   async function fetchPremarketPrice() {

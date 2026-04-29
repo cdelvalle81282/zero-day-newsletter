@@ -42,6 +42,8 @@ app.secret_key = os.urandom(32)
 
 DRAFTS_DIR = BASE_DIR / "drafts"
 DRAFTS_DIR.mkdir(exist_ok=True)
+CHARTS_DIR = DRAFTS_DIR / "charts"
+CHARTS_DIR.mkdir(exist_ok=True)
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -54,7 +56,7 @@ BRIEF_ALLOWED_KEYS = {
     "level_key_label", "level_key_value",
     "level_support_1_label", "level_support_1_value",
     "level_support_2_label", "level_support_2_value",
-    "levels_note",
+    "levels_note", "levels_chart_url",
     "the_number_value", "the_number_text",
     "volume_anomaly_headline", "volume_anomaly_text",
     "editor_note_text",
@@ -104,16 +106,17 @@ def validate_brief(brief):
         except (ValueError, TypeError):
             return "Invalid date format in brief"
 
-    editorial_url = brief.get("editorial_url")
-    if editorial_url and not re.match(r'^https?://', editorial_url):
-        return "editorial_url must start with http:// or https://"
+    for url_key in ("editorial_url", "levels_chart_url"):
+        url_val = brief.get(url_key)
+        if url_val and not re.match(r'^https?://', url_val):
+            return f"{url_key} must start with http:// or https://"
 
     for key, val in brief.items():
         if key in NUMERIC_LEVEL_KEYS:
             if val is not None and not isinstance(val, (int, float)):
                 return f"{key} must be numeric or null"
         elif key in ("created_at", "date", "status", "signal_color", "author") or \
-                key.endswith(("_text", "_label", "_note", "_attribution", "_headline", "_value")):
+                key.endswith(("_text", "_label", "_note", "_attribution", "_headline", "_value", "_url")):
             if val is not None and not isinstance(val, str):
                 return f"{key} must be a string"
             if isinstance(val, str) and len(val) > MAX_TEXT_LEN:
@@ -147,6 +150,8 @@ def require_auth(f):
 def enforce_json_content_type():
     """Reject non-JSON POST requests — prevents cross-origin form-based CSRF."""
     if request.method == "POST" and request.path.startswith("/0dte-daily/"):
+        if request.endpoint == "upload_chart":
+            return  # multipart image upload, exempt from JSON requirement
         ct = request.content_type or ""
         if "application/json" not in ct:
             return jsonify({"ok": False, "error": "Content-Type must be application/json"}), 415
@@ -805,6 +810,56 @@ def rerender(target_date):
         app.logger.warning("rerender failed: %s", err)
         return jsonify({"ok": False, "error": "Re-render failed. Check server logs."}), 500
     return jsonify({"ok": True, "message": f"Re-rendered for {target_date}"})
+
+
+@app.route("/0dte-daily/brief-data/<target_date>")
+@require_auth
+def brief_data(target_date):
+    validate_date(target_date)
+    brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
+    if not brief_path.exists():
+        return jsonify({"ok": False, "error": "No brief found"}), 404
+    try:
+        return jsonify(json.loads(brief_path.read_text()))
+    except Exception:
+        return jsonify({"ok": False, "error": "Could not read brief"}), 500
+
+
+@app.route("/0dte-daily/upload-chart/<target_date>", methods=["POST"])
+@require_auth
+def upload_chart(target_date):
+    validate_date(target_date)
+
+    if "chart" not in request.files:
+        return jsonify({"ok": False, "error": "No file provided"}), 400
+    file = request.files["chart"]
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No file selected"}), 400
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("jpg", "jpeg", "png", "gif", "webp"):
+        return jsonify({"ok": False, "error": "Only JPG, PNG, GIF, or WebP images are allowed"}), 400
+
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 5 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Image must be under 5 MB"}), 400
+
+    filename = f"levels_{target_date}.{ext}"
+    file.save(str(CHARTS_DIR / filename))
+
+    url = f"{config.SERVER_BASE_URL}/0dte-daily/charts/{filename}"
+    app.logger.info(f"Chart uploaded for {target_date}: {filename}")
+    return jsonify({"ok": True, "url": url})
+
+
+@app.route("/0dte-daily/charts/<filename>")
+def serve_chart(filename):
+    """Serve chart images without auth — email clients must be able to fetch them."""
+    if not re.match(r'^levels_\d{4}-\d{2}-\d{2}\.(jpg|jpeg|png|gif|webp)$', filename):
+        abort(404)
+    return send_from_directory(str(CHARTS_DIR), filename)
 
 
 @app.route("/0dte-daily/status")

@@ -20,7 +20,8 @@ DAILY_BRIEF_DIR = _env("DAILY_BRIEF_DIR", "daily_briefs")
 # ── OptiPub ───────────────────────────────────────────────────────────────────
 OPTIPUB_API_BASE        = _env("OPTIPUB_API_BASE", "https://optionpit.app.optipub.com/api/3.2")
 OPTIPUB_API_KEY         = _env("OPTIPUB_API_KEY",  "")
-ZERO_DAY_PUBLICATION_ID = int(_env("ZERO_DAY_PUBLICATION_ID", "103"))
+ZERO_DAY_PUBLICATION_ID = int(_env("ZERO_DAY_PUBLICATION_ID", "113"))
+OPTIPUB_TEMPLATE_ID     = int(_env("OPTIPUB_TEMPLATE_ID",     "81"))
 
 # ── Auth health reminders ─────────────────────────────────────────────────────
 REMINDER_DAYS_BEFORE_EXPIRY = int(_env("REMINDER_DAYS_BEFORE_EXPIRY", "3"))
@@ -64,8 +65,7 @@ SEGMENT_NAMES = {
 }
 
 # ── OptiPub send settings ─────────────────────────────────────────────────────
-# Sender ID to use for test sends and drafts.
-# id:46 = "0DTE" sender on pub 41 — use until pub 103 gets its own sender.
+# Sender ID for pub 113. Must be assigned to the publication in the OptiPub UI.
 OPTIPUB_SENDER_ID = int(_env("OPTIPUB_SENDER_ID", "46"))
 
 # Default segments shown in the send picker (comma-separated IDs)

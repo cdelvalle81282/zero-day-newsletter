@@ -158,10 +158,10 @@ def fmt_volume(v):
     return str(v)
 
 
-def generate_the_number(tn):
+def generate_the_number(tn, data_date):
     """
     Auto-generate The Number value and text from the best 0DTE trade of the day.
-    tn is the 'the_number' dict from market data.
+    tn is the 'the_number' dict from market data. data_date is the trading date string.
     """
     if not tn:
         return None, None
@@ -172,19 +172,21 @@ def generate_the_number(tn):
     kind   = tn["type"].lower()
     open_  = tn["open"]
     high_  = tn["high"]
+    day_str = format_date_short(data_date)
 
     number_value = f"+{pct:,}%"
     number_text  = (
-        f"An SPX {strike:,} {kind} expiring today opened at ${open_:.2f}. "
+        f"An SPX {strike:,} {kind} that expired {day_str} opened at ${open_:.2f}. "
         f"By the high of the day it traded at ${high_:.2f}, "
         f"a ${gain:,} gain per contract ({pct:,}%) for traders who caught the move."
     )
     return number_value, number_text
 
 
-def generate_volume_anomaly(options):
+def generate_volume_anomaly(options, data_date):
     """
     Auto-generate Volume Anomaly headline and narrative from options data.
+    data_date is the trading date string (not necessarily today).
     """
     vol     = options.get("today_volume")
     avg     = options.get("volume_20day_avg")
@@ -198,6 +200,7 @@ def generate_volume_anomaly(options):
     if not vol:
         return None, None
 
+    day_str = format_date_short(data_date)
     headline = f"SPX 0DTE Volume: {fmt_volume(vol)} Contracts"
 
     # Build narrative
@@ -207,11 +210,11 @@ def generate_volume_anomaly(options):
     if vs_pct is not None:
         direction = "above" if vs_pct >= 0 else "below"
         parts.append(
-            f"Today's 0DTE SPX volume came in at {fmt_volume(vol)} contracts, "
+            f"0DTE SPX volume on {day_str} came in at {fmt_volume(vol)} contracts, "
             f"roughly {abs(vs_pct):.0f}% {direction} the 20-day average of {fmt_volume(avg)}."
         )
     else:
-        parts.append(f"Today's 0DTE SPX volume came in at {fmt_volume(vol)} contracts.")
+        parts.append(f"0DTE SPX volume on {day_str} came in at {fmt_volume(vol)} contracts.")
 
     # Call vs put skew
     if call_vol and put_vol:
@@ -272,12 +275,20 @@ def build_tokens(brief, market, target_date):
     qqq     = market.get("qqq", {})
     options = market.get("options", {})
 
+    # Determine which trading day the market data describes
+    try:
+        from datetime import date as date_cls
+        d = date_cls.fromisoformat(str(target_date))
+        data_date = str(market_data_date_for_newsletter(d))
+    except Exception:
+        data_date = str(target_date)
+
     # Author
     author_key  = brief.get("author", config.DEFAULT_AUTHOR)
     author_data = config.AUTHORS.get(author_key, config.AUTHORS[config.DEFAULT_AUTHOR])
 
     # Auto-generate The Number from market data; fall back to brief if unavailable
-    auto_number_value, auto_number_text = generate_the_number(options.get("the_number"))
+    auto_number_value, auto_number_text = generate_the_number(options.get("the_number"), data_date)
     the_number_value = auto_number_value or brief.get("the_number_value", "")
     the_number_text  = auto_number_text  or brief.get("the_number_text", "")
     if auto_number_value:
@@ -286,7 +297,7 @@ def build_tokens(brief, market, target_date):
         print("  The Number: using Daily Brief value (options data unavailable).")
 
     # Auto-generate Volume Anomaly; fall back to brief if unavailable
-    auto_vol_headline, auto_vol_text = generate_volume_anomaly(options)
+    auto_vol_headline, auto_vol_text = generate_volume_anomaly(options, data_date)
     volume_headline = auto_vol_headline or brief.get("volume_anomaly_headline", "")
     volume_text     = auto_vol_text     or brief.get("volume_anomaly_text", "")
     if auto_vol_headline:
@@ -304,6 +315,20 @@ def build_tokens(brief, market, target_date):
         )
     else:
         editorial_link_html = ""
+
+    chart_url = brief.get("levels_chart_url", "").strip()
+    if chart_url and re.match(r'^https?://', chart_url):
+        levels_chart_html = (
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"'
+            ' style="margin:12px 0 0 0;">'
+            '<tr><td>'
+            f'<img src="{html_escape(chart_url)}" alt="SPX Levels Chart"'
+            ' width="100%" style="display:block;max-width:560px;height:auto;'
+            'border:1px solid #E5E7EB;" />'
+            '</td></tr></table>'
+        )
+    else:
+        levels_chart_html = ""
 
     return {
         # Date
@@ -334,7 +359,8 @@ def build_tokens(brief, market, target_date):
         "LEVEL_S1_VALUE":  fmt_price(brief.get("level_support_1_value")),
         "LEVEL_S2_LABEL":  html_escape(brief.get("level_support_2_label", "Support 2")),
         "LEVEL_S2_VALUE":  fmt_price(brief.get("level_support_2_value")),
-        "LEVELS_NOTE":     html_escape(brief.get("levels_note", "")),
+        "LEVELS_NOTE":          html_escape(brief.get("levels_note", "")),
+        "LEVELS_CHART_HTML":    levels_chart_html,
 
         # The Number — auto from options chain, fallback to brief
         "THE_NUMBER":      html_escape(the_number_value) if the_number_value else "",
@@ -408,16 +434,20 @@ def create_optipub_draft(html, brief, target_date,
 
     body = {
         "publication_id":   config.ZERO_DAY_PUBLICATION_ID,
-        "message_type_id":  3,   # email-free-style
+        "message_type_id":  3,
+        "template_id":      config.OPTIPUB_TEMPLATE_ID,
         "sender_id":        config.OPTIPUB_SENDER_ID,
+        "reply_id":         config.OPTIPUB_SENDER_ID,
         "title":            title,
+        "subject":          title,
+        "is_test":          False,
         "content":          html,
     }
 
     if included_segments:
-        body["included_segments"] = [{"id": s} for s in included_segments]
+        body["included_segment_ids"] = included_segments
     if excluded_segments:
-        body["excluded_segments"] = [{"id": s} for s in excluded_segments]
+        body["excluded_segment_ids"] = excluded_segments
 
     payload = json.dumps(body).encode("utf-8")
 
@@ -426,13 +456,19 @@ def create_optipub_draft(html, brief, target_date,
         data=payload,
         headers={
             "Content-Type": "application/json",
+            "Accept":        "application/json",
             "Authorization": f"Bearer {config.OPTIPUB_API_KEY}",
         },
         method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        result = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read()
+            result = json.loads(raw) if raw.strip() else {}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OptiPub API error {e.code}: {body[:500]}") from e
 
     return result.get("data", {}).get("id"), title
 

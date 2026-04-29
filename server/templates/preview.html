@@ -231,7 +231,7 @@
       <div style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:8px;">Include Segments</div>
       {% for seg in segments %}
       <label style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:#0A1628; border-radius:3px; margin-bottom:4px; cursor:pointer; font-family:Tahoma,sans-serif; font-size:13px; color:#D1D5DB;">
-        <input type="checkbox" name="include_seg" value="{{ seg.id }}" style="width:15px; height:15px; accent-color:#22C55E;">
+        <input type="checkbox" name="include_seg" value="{{ seg.id }}" checked style="width:15px; height:15px; accent-color:#22C55E;">
         <span>{{ seg.name }}</span>
       </label>
       {% endfor %}
