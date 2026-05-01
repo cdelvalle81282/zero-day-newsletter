@@ -590,10 +590,15 @@ def approve(target_date):
         if unknown:
             return jsonify({"ok": False, "error": f"Unknown segment IDs: {sorted(unknown)}"}), 400
 
+        subject      = (body.get("subject",      "") or "").strip() or None
+        preview_line = (body.get("preview_line", "") or "").strip() or None
+
         msg_id, title = create_optipub_draft(
             html, brief, target_date,
             included_segments=included or None,
             excluded_segments=excluded or None,
+            subject=subject,
+            preview_line=preview_line,
         )
     except Exception:
         app.logger.exception("approve failed")
@@ -617,13 +622,15 @@ def suggest_subject(target_date):
     brief_path = BASE_DIR / config.DAILY_BRIEF_DIR / f"{target_date}.json"
     brief = json.loads(brief_path.read_text()) if brief_path.exists() else {}
 
-    signal_color = brief.get("signal_color", "yellow")
-    signal_label = signal_config(signal_color)["label"]
-    signal_text  = (brief.get("signal_text") or "").strip()
-    editor_note  = (brief.get("editor_note_text") or "").strip()
+    signal_color     = brief.get("signal_color", "yellow")
+    signal_label     = signal_config(signal_color)["label"]
+    signal_text      = (brief.get("signal_text") or "").strip()
+    editor_note      = (brief.get("editor_note_text") or "").strip()
+    volume_headline  = (brief.get("volume_anomaly_headline") or "").strip()
+    the_number_value = (brief.get("the_number_value") or "").strip()
 
     # Sensible defaults in case Claude is unavailable or brief is empty
-    default_subject = f"0DTE Daily — {signal_label} signal"
+    default_subject = f"0DTE Daily - {signal_label} signal"
     default_preview = f"Today's setup and what to watch at the open"
 
     if not config.ANTHROPIC_API_KEY:
@@ -636,6 +643,10 @@ def suggest_subject(target_date):
         prompt_parts = [f"Signal: {signal_label}"]
         if signal_text:
             prompt_parts.append(f"Signal context: {signal_text}")
+        if volume_headline:
+            prompt_parts.append(f"Volume anomaly: {volume_headline}")
+        if the_number_value:
+            prompt_parts.append(f"The Number (key options level): {the_number_value}")
         if editor_note:
             prompt_parts.append(f"Editor's note: {editor_note}")
 
@@ -645,21 +656,23 @@ def suggest_subject(target_date):
             model="claude-haiku-4-5-20251001",
             max_tokens=256,
             system=(
-                "You write compelling email subject lines and preview text for a "
-                "daily options trading newsletter called '0DTE Daily'. "
-                "The audience is active options traders. "
-                "Keep subjects under 60 characters. Keep preview lines under 100 characters. "
-                "Base both on the editor's note and the signal. "
-                "Be specific, intriguing, and direct — create a sense of urgency or insight. "
-                "Never use %, $, or em dashes (—). Use plain hyphens if you need a dash. "
-                "Do not use hype words like 'explosive', 'massive', or 'huge'."
+                "You write subject lines and preview text for 0DTE Daily, a pre-market "
+                "options trading newsletter for active SPX/0DTE traders sent by Option Pit.\n\n"
+                "Voice: Sharp, direct, and data-specific. Lead with the trade idea or the "
+                "standout data point - not the newsletter name (that is already in the sender field). "
+                "Reference specific levels, signals, or volume when present. "
+                "Avoid hype words (explosive, massive, huge) and cliches (buckle up, brace yourself).\n\n"
+                "Subject line: under 60 characters. One clear hook.\n"
+                "Preview line: under 100 characters. A second distinct hook that extends the subject "
+                "or adds a compelling detail - not a description of the email's contents.\n\n"
+                "Never use %, $, or em dashes. Use plain hyphens if you need a dash."
             ),
             messages=[{
                 "role": "user",
                 "content": (
                     f"Write a subject line and preview line for today's newsletter.\n\n"
                     f"{brief_summary}\n\n"
-                    "Respond with exactly two lines in this format:\n"
+                    "Respond with exactly two lines:\n"
                     "Subject: <subject line>\n"
                     "Preview: <preview line>"
                 ),

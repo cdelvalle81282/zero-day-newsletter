@@ -221,11 +221,28 @@
 
 <!-- SEGMENT PICKER MODAL -->
 <div id="segmentModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center;">
-  <div style="background:#0F1F35; border:1px solid #1E3A5F; border-radius:6px; width:480px; max-width:95vw; padding:28px;">
-    <h2 style="font-family:Tahoma,sans-serif; font-size:16px; color:#FFFFFE; margin-bottom:6px;">Approve → Post to OptiPub</h2>
+  <div style="background:#0F1F35; border:1px solid #1E3A5F; border-radius:6px; width:520px; max-width:95vw; padding:28px;">
+    <h2 style="font-family:Tahoma,sans-serif; font-size:16px; color:#FFFFFE; margin-bottom:6px;">Approve - Post to OptiPub</h2>
     <p style="font-family:Tahoma,sans-serif; font-size:12px; color:#4B6A8A; margin-bottom:20px;">
-      Select segments to include or exclude. Leave all unchecked to post as a draft with no segment assigned — you can add segments in OptiPub before scheduling.
+      Confirm the subject and preview, then choose segments. The subject and preheader will be set exactly as entered below.
     </p>
+
+    <div style="margin-bottom:14px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:6px;">Subject Line</label>
+      <input id="approveSubject" type="text" placeholder="Loading suggestion..."
+        style="width:100%; padding:10px 12px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; color:#FFFFFE; font-family:Tahoma,sans-serif; font-size:13px; outline:none; box-sizing:border-box;">
+      <div id="approveSubjectCount" style="font-size:11px; color:#4B6A8A; margin-top:4px; min-height:14px;"></div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:6px;">Preview Line</label>
+      <input id="approvePreview" type="text" placeholder="Loading suggestion..."
+        style="width:100%; padding:10px 12px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; color:#FFFFFE; font-family:Tahoma,sans-serif; font-size:13px; outline:none; box-sizing:border-box;">
+      <div id="approvePreviewCount" style="font-size:11px; color:#4B6A8A; margin-top:4px; min-height:14px;"></div>
+    </div>
+
+    <div style="border-top:1px solid #1E3A5F; padding-top:16px; margin-bottom:16px;">
+      <p style="font-family:Tahoma,sans-serif; font-size:11px; color:#4B6A8A; margin-bottom:12px;">Select segments to include or exclude. Leave all unchecked to post with no segment assigned.</p>
 
     <div style="margin-bottom:16px;">
       <div style="font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:8px;">Include Segments</div>
@@ -245,6 +262,7 @@
         <span>{{ seg.name }}</span>
       </label>
       {% endfor %}
+    </div>
     </div>
 
     <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -307,7 +325,36 @@
   }
 
   function showSegmentPicker() {
+    const subjectEl = document.getElementById('approveSubject');
+    const previewEl = document.getElementById('approvePreview');
+    subjectEl.value = '';
+    subjectEl.placeholder = 'Loading suggestion...';
+    previewEl.value = '';
+    previewEl.placeholder = 'Loading suggestion...';
+    document.getElementById('approveSubjectCount').textContent = '';
+    document.getElementById('approvePreviewCount').textContent = '';
     document.getElementById('segmentModal').style.display = 'flex';
+
+    fetch('/0dte-daily/suggest-subject/{{ target_date }}')
+      .then(r => r.json())
+      .then(data => {
+        if (data.subject) {
+          subjectEl.value = data.subject;
+          subjectEl.placeholder = 'Subject line';
+          document.getElementById('approveSubjectCount').textContent =
+            `${data.subject.length} chars - AI suggestion, edit freely`;
+        }
+        if (data.preview_line) {
+          previewEl.value = data.preview_line;
+          previewEl.placeholder = 'Preview line';
+          document.getElementById('approvePreviewCount').textContent =
+            `${data.preview_line.length} chars - AI suggestion, edit freely`;
+        }
+      })
+      .catch(() => {
+        subjectEl.placeholder = 'Enter subject line';
+        previewEl.placeholder = 'Enter preview line';
+      });
   }
 
   function closeSegmentPicker() {
@@ -315,9 +362,10 @@
   }
 
   function approve() {
-    // Collect checked segments
     const included = [...document.querySelectorAll('input[name="include_seg"]:checked')].map(el => parseInt(el.value));
     const excluded = [...document.querySelectorAll('input[name="exclude_seg"]:checked')].map(el => parseInt(el.value));
+    const subject = document.getElementById('approveSubject').value.trim();
+    const preview_line = document.getElementById('approvePreview').value.trim();
 
     closeSegmentPicker();
     document.getElementById('btnApprove').disabled = true;
@@ -326,7 +374,7 @@
     fetch('/0dte-daily/approve/{{ target_date }}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ included_segments: included, excluded_segments: excluded }),
+      body: JSON.stringify({ included_segments: included, excluded_segments: excluded, subject, preview_line }),
     })
       .then(r => r.json())
       .then(data => {

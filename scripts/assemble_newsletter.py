@@ -374,6 +374,13 @@ def build_tokens(brief, market, target_date):
         "EDITOR_NOTE_TEXT": html_escape(brief.get("editor_note_text", "")),
         "EDITORIAL_LINK_HTML": editorial_link_html,
 
+        # Preview text — per-issue HTML preheader, overridden at approval time
+        "PREVIEW_TEXT": html_escape(
+            f"{sig['label']} signal today - {volume_headline.rstrip('.')}."
+            if volume_headline
+            else f"{sig['label']} signal today - SPX key levels, The Number, and more."
+        ),
+
         # CTA block — filled from daily brief, carries forward day to day
         "CTA_HEADLINE":    html_escape(brief.get("cta_headline",    "Trade 0DTE With the Pros")),
         "CTA_BODY":        html_escape(brief.get("cta_body",        "Join the Option Pit live trading room for real-time 0DTE setups, levels, and alerts from Mark, Licia, and the team.")),
@@ -423,14 +430,24 @@ def render_template(tokens):
 # ── OptiPub draft creation ────────────────────────────────────────────────────
 
 def create_optipub_draft(html, brief, target_date,
-                         included_segments=None, excluded_segments=None):
+                         included_segments=None, excluded_segments=None,
+                         subject=None, preview_line=None):
     """POST the rendered HTML as a draft message to OptiPub."""
     import urllib.request
 
     signal_label = signal_config(brief.get("signal_color", "yellow"))["label"]
     dt = datetime.strptime(str(target_date), "%Y-%m-%d")
     date_str = dt.strftime("%B %-d") if os.name != "nt" else dt.strftime("%B {d}").replace("{d}", str(dt.day))
-    title = f"0DTE Daily — {signal_label} — {date_str}"
+    title = subject or f"0DTE Daily - {signal_label} - {date_str}"
+
+    # Update the HTML preheader div with the editor's preview line
+    if preview_line:
+        html = re.sub(
+            r'(<div[^>]*display:none;max-height:0[^>]*>)([^<]*)(&nbsp;)',
+            lambda m: m.group(1) + html_escape(preview_line) + m.group(3),
+            html,
+            count=1,
+        )
 
     body = {
         "publication_id":   config.ZERO_DAY_PUBLICATION_ID,
