@@ -100,9 +100,9 @@ def signal_config(color):
 def signal_key_html(active_color):
     """Build the 3-row signal legend, highlighting the active color."""
     items = [
-        ("green",  "#22C55E", "GREEN",  "Clear market bias. Look to trade in the direction of the trend."),
-        ("yellow", "#D4A017", "YELLOW", "Transitional market bias. Mixed signals; size down and wait for confirmation."),
-        ("red",    "#CC3333", "RED",    "No clear market bias. Narrow range or no trend; high-probability plays are harder to find."),
+        ("green",  "#22C55E", "GREEN",  "High probability of the market moving higher."),
+        ("yellow", "#D4A017", "YELLOW", "Be cautious when making a directional trade."),
+        ("red",    "#CC3333", "RED",    "High likelihood of the market dropping."),
     ]
     rows = []
     for color, hex_color, label, desc in items:
