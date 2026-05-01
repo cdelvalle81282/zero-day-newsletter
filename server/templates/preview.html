@@ -241,6 +241,18 @@
       <div id="approvePreviewCount" style="font-size:11px; color:#4B6A8A; margin-top:4px; min-height:14px;"></div>
     </div>
 
+    <div style="margin-bottom:20px;">
+      <label style="display:block; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#4B6A8A; margin-bottom:8px;">Send Timing</label>
+      <div style="display:flex; gap:8px;">
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; cursor:pointer; font-family:Tahoma,sans-serif; font-size:13px; color:#D1D5DB;">
+          <input type="radio" name="send_timing" value="draft" checked style="accent-color:#3B82F6;"> Post as draft
+        </label>
+        <label style="flex:1; display:flex; align-items:center; gap:8px; padding:10px 14px; background:#0A1628; border:1px solid #1E3A5F; border-radius:3px; cursor:pointer; font-family:Tahoma,sans-serif; font-size:13px; color:#D1D5DB;">
+          <input type="radio" name="send_timing" value="schedule" style="accent-color:#22C55E;"> Schedule 9AM ET
+        </label>
+      </div>
+    </div>
+
     <div style="border-top:1px solid #1E3A5F; padding-top:16px; margin-bottom:16px;">
       <p style="font-family:Tahoma,sans-serif; font-size:11px; color:#4B6A8A; margin-bottom:12px;">Select segments to include or exclude. Leave all unchecked to post with no segment assigned.</p>
 
@@ -324,6 +336,17 @@
     setTimeout(() => { t.className = 'toast'; }, 4000);
   }
 
+  function updateApproveButtonLabel() {
+    const scheduled = document.querySelector('input[name="send_timing"]:checked').value === 'schedule';
+    document.getElementById('btnApproveConfirm').textContent = scheduled ? 'Schedule for 9AM ET' : 'Post Draft to OptiPub';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('input[name="send_timing"]').forEach(r => {
+      r.addEventListener('change', updateApproveButtonLabel);
+    });
+  });
+
   function showSegmentPicker() {
     const subjectEl = document.getElementById('approveSubject');
     const previewEl = document.getElementById('approvePreview');
@@ -333,6 +356,9 @@
     previewEl.placeholder = 'Loading suggestion...';
     document.getElementById('approveSubjectCount').textContent = '';
     document.getElementById('approvePreviewCount').textContent = '';
+    // Reset timing to draft each time modal opens
+    const draftRadio = document.querySelector('input[name="send_timing"][value="draft"]');
+    if (draftRadio) { draftRadio.checked = true; updateApproveButtonLabel(); }
     document.getElementById('segmentModal').style.display = 'flex';
 
     fetch('/0dte-daily/suggest-subject/{{ target_date }}')
@@ -366,6 +392,7 @@
     const excluded = [...document.querySelectorAll('input[name="exclude_seg"]:checked')].map(el => parseInt(el.value));
     const subject = document.getElementById('approveSubject').value.trim();
     const preview_line = document.getElementById('approvePreview').value.trim();
+    const schedule_9am_et = document.querySelector('input[name="send_timing"]:checked').value === 'schedule';
 
     closeSegmentPicker();
     document.getElementById('btnApprove').disabled = true;
@@ -374,13 +401,16 @@
     fetch('/0dte-daily/approve/{{ target_date }}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ included_segments: included, excluded_segments: excluded, subject, preview_line }),
+      body: JSON.stringify({ included_segments: included, excluded_segments: excluded, subject, preview_line, schedule_9am_et }),
     })
       .then(r => r.json())
       .then(data => {
         document.getElementById('spinApprove').classList.remove('show');
         if (data.ok) {
-          showToast(`Draft posted to OptiPub (ID: ${data.msg_id})`, 'ok');
+          const msg = schedule_9am_et
+            ? `Scheduled for 9AM ET (ID: ${data.msg_id})`
+            : `Draft posted to OptiPub (ID: ${data.msg_id})`;
+          showToast(msg, 'ok');
           setTimeout(() => location.reload(), 1500);
         } else {
           showToast(`Error: ${data.error}`, 'err');

@@ -431,7 +431,7 @@ def render_template(tokens):
 
 def create_optipub_draft(html, brief, target_date,
                          included_segments=None, excluded_segments=None,
-                         subject=None, preview_line=None):
+                         subject=None, preview_line=None, send_at=None):
     """POST the rendered HTML as a draft message to OptiPub."""
     import urllib.request
 
@@ -461,6 +461,10 @@ def create_optipub_draft(html, brief, target_date,
         "content":          html,
     }
 
+    if preview_line:
+        body["preview_text"] = preview_line
+    if send_at:
+        body["send_at"] = send_at
     if included_segments:
         body["included_segment_ids"] = included_segments
     if excluded_segments:

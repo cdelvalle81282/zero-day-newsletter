@@ -260,9 +260,10 @@ def notify_deliverability_issue(target_date, description):
     )
 
 
-def notify_approved(target_date, msg_id, title):
+def notify_approved(target_date, msg_id, title, scheduled=False):
+    timing = "scheduled for 9AM ET" if scheduled else "posted as draft"
     _send_slack(
-        f":white_check_mark: *0DTE Daily approved and posted to OptiPub*\n"
+        f":white_check_mark: *0DTE Daily approved - {timing}*\n"
         f"Date: {target_date} | Message ID: {msg_id}\nTitle: {title}"
     )
 
@@ -592,6 +593,16 @@ def approve(target_date):
 
         subject      = (body.get("subject",      "") or "").strip() or None
         preview_line = (body.get("preview_line", "") or "").strip() or None
+        schedule_9am = bool(body.get("schedule_9am_et", False))
+
+        send_at = None
+        if schedule_9am:
+            import zoneinfo
+            from datetime import UTC
+            et_tz = zoneinfo.ZoneInfo("America/New_York")
+            d = date.fromisoformat(target_date)
+            nine_am_et = datetime(d.year, d.month, d.day, 9, 0, 0, tzinfo=et_tz)
+            send_at = nine_am_et.astimezone(UTC).isoformat(timespec="seconds")
 
         msg_id, title = create_optipub_draft(
             html, brief, target_date,
@@ -599,6 +610,7 @@ def approve(target_date):
             excluded_segments=excluded or None,
             subject=subject,
             preview_line=preview_line,
+            send_at=send_at,
         )
     except Exception:
         app.logger.exception("approve failed")
@@ -607,9 +619,10 @@ def approve(target_date):
 
     approved_path = DRAFTS_DIR / f"{target_date}.approved"
     approved_path.write_text(json.dumps({"msg_id": msg_id, "title": title,
-                                         "approved_at": datetime.utcnow().isoformat()}))
+                                         "approved_at": datetime.utcnow().isoformat(),
+                                         "scheduled": schedule_9am}))
 
-    notify_approved(target_date, msg_id, title)
+    notify_approved(target_date, msg_id, title, scheduled=schedule_9am)
 
     return jsonify({"ok": True, "msg_id": msg_id, "title": title})
 
