@@ -403,6 +403,20 @@ def build_tokens(brief, market, target_date):
     }
 
 
+def _strip_if_block(html, condition, tag):
+    """Remove a <!-- IF:tag --> ... <!-- ENDIF:tag --> block when condition is False."""
+    if condition:
+        html = html.replace(f"<!-- IF:{tag} -->", "").replace(f"<!-- ENDIF:{tag} -->", "")
+    else:
+        html = re.sub(
+            rf"<!-- IF:{tag} -->.*?<!-- ENDIF:{tag} -->",
+            "",
+            html,
+            flags=re.DOTALL,
+        )
+    return html
+
+
 def render_template(tokens):
     """Load the HTML template and substitute all {{TOKEN}} placeholders."""
     template_path = os.path.join(
@@ -415,6 +429,16 @@ def render_template(tokens):
 
     with open(template_path, encoding="utf-8") as f:
         html = f.read()
+
+    # Strip optional sections that have no content
+    has_number = bool(tokens.get("THE_NUMBER") or tokens.get("THE_NUMBER_TEXT"))
+    has_volume = bool(tokens.get("VOLUME_HEADLINE") or tokens.get("VOLUME_TEXT"))
+    html = _strip_if_block(html, has_number, "THE_NUMBER")
+    html = _strip_if_block(html, has_volume, "VOLUME")
+    if not has_number:
+        print("  THE NUMBER section hidden (no data).")
+    if not has_volume:
+        print("  VOLUME ANOMALY section hidden (no data).")
 
     for token, value in tokens.items():
         html = html.replace("{{" + token + "}}", str(value) if value is not None else "")
@@ -469,6 +493,8 @@ def create_optipub_draft(html, brief, target_date,
         body["included_segment_ids"] = included_segments
     if excluded_segments:
         body["excluded_segment_ids"] = excluded_segments
+    if config.OPTIPUB_TAG_IDS:
+        body["tag_ids"] = config.OPTIPUB_TAG_IDS
 
     payload = json.dumps(body).encode("utf-8")
 

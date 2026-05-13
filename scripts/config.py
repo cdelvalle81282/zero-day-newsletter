@@ -72,6 +72,11 @@ OPTIPUB_SENDER_ID = int(_env("OPTIPUB_SENDER_ID", "46"))
 # 814 = F0DTE, 11 = Staff List
 OPTIPUB_DEFAULT_SEGMENTS = _env("OPTIPUB_DEFAULT_SEGMENTS", "814,11")
 
+# Tag IDs applied to every outgoing message (comma-separated integers)
+# Find tag IDs in the OptiPub UI: Settings > Tags, then click a tag to see its ID in the URL.
+_tag_ids_raw = _env("OPTIPUB_TAG_IDS", "")
+OPTIPUB_TAG_IDS = [int(x) for x in _tag_ids_raw.split(",") if x.strip().isdigit()]
+
 # ── Anthropic ─────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY", "")
 

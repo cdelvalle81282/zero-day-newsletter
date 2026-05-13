@@ -1047,10 +1047,10 @@ def start_scheduler():
                       id="fetch_premarket")
     scheduler.add_job(job_fetch_options, "cron",
                       day_of_week="mon-fri", hour=15, minute=50,
-                      id="fetch_options")
+                      id="fetch_options", misfire_grace_time=600)
     scheduler.add_job(job_fetch_quotes, "cron",
                       day_of_week="mon-fri", hour=16, minute=35,
-                      id="fetch_quotes")
+                      id="fetch_quotes", misfire_grace_time=600)
     scheduler.add_job(job_auth_health, "cron",
                       day_of_week="mon-fri", hour=9, minute=0,
                       id="auth_health")
